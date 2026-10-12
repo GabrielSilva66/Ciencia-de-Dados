@@ -1,0 +1,532 @@
+---
+title: 'Aula 4 - Análise de Vendas em R'
+date: last-modified
+toc: true
+format:
+  html: default
+execute:
+  enabled: true
+---
+
+## Motivação
+
+Na Aula 3 você respondeu, em Python, a uma pergunta de negócio de verdade: quais produtos, clientes, países e períodos priorizar, e o quanto cancelamentos e devoluções custam ao resultado. O raciocínio que sustentou aquela análise, isolar vendas válidas, agregar por pedido e por produto, medir o que foi perdido, não pertence ao pandas. Ele pertence a quem analisa dados, e pode ser expresso em qualquer ferramenta capaz de ler uma tabela.
+
+R é essa outra ferramenta. Ela já apareceu de passagem na Aula 1, como linguagem relevante em estatística e na academia, e agora é hora de conhecê-la na prática, através do tidyverse, uma coleção de pacotes que oferece para o R o mesmo tipo de sintaxe expressiva e encadeada que o pandas oferece para o Python. Este roteiro reproduz, passo a passo, a mesma análise da Aula 3, e depois vai além dela: apresenta perguntas de negócio novas, que o enunciado original não pedia, para mostrar que o valor de dominar duas ferramentas não é redundância, é alcance.
+
+## Objetivos de aprendizagem
+
+Ao final deste roteiro, você será capaz de:
+
+1. Reconhecer as equivalências entre pandas e tidyverse: `groupby().agg()` e `group_by() |> summarise()`, filtros booleanos e `filter()`, `pd.to_datetime` e as funções do pacote `lubridate`;
+2. Reproduzir em R os indicadores de negócio calculados em Python na Aula 3: faturamento, ticket médio, produtos mais relevantes e impacto de cancelamentos;
+3. Escrever pipelines tidyverse (`|>`) para responder a perguntas de negócio que ainda não haviam sido formuladas, usando o mesmo dataset;
+4. Comparar criticamente os resultados das duas linguagens sobre os mesmos dados, como forma de validar a tradução.
+
+::: {.callout-tip}
+## Como usar este roteiro
+
+Este roteiro pressupõe o projeto-vendas das Aulas 1 a 3 funcionando, com o Online Retail já baixado em `data/`. Assim como a Aula 3, este script não é a análise completa: é uma tradução de referência, seção a seção, mais uma seção nova de perguntas extras. Ao final, quatro perguntas ajudam a testar se os critérios usados aqui, os mesmos da Aula 3, continuam sólidos quando expressos em outra linguagem.
+:::
+
+## Configurando o ambiente R
+
+A Aula 1 isolou o ambiente Python por projeto com `uv venv`, e registrou versões exatas em `requirements.txt`. Aqui simplificamos deliberadamente: instalamos os pacotes uma vez, de forma global na máquina, sem isolar por projeto.
+
+```r
+install.packages(c("tidyverse", "readxl", "lubridate"))
+
+```
+
+::: {.callout-note}
+## Uma simplificação, não um esquecimento
+
+R tem um equivalente ao `uv venv`: o pacote `renv`, que cria um ambiente isolado e reprodutível por projeto, com um `renv.lock` no lugar do `requirements.txt`. Ele fica fora do escopo desta aula, cujo foco é a tradução da análise, mas vale saber que ele existe: se um dia você depender de R em um projeto sério, `renv` é o próximo passo natural, pela mesma razão que `uv venv` foi o da Aula 1.
+:::
+
+# 1. Retomando o projeto
+
+Como sempre, comece verificando onde o projeto parou:
+
+```{bash}
+
+cd ./projeto-vendas
+
+# Onde paramos? O git log conta a historia ate aqui:
+git log --oneline
+
+# E o estado atual? Espera-se uma area de trabalho limpa:
+git status
+
+```
+
+Se o log mostra os commits das Aulas 1 a 3 e o status diz que não há nada a commitar, o ambiente e os dados estão prontos. Os dados já baixados na Aula 2 servem sem qualquer alteração.
+
+# 2. O enunciado
+
+O enunciado é exatamente o mesmo da [Aula 3](03-analise-vendas.qmd): o gestor de vendas precisa entender o desempenho comercial do último ano e identificar oportunidades para aumentar o faturamento, considerando:
+
+- Evolução mensal do faturamento e sazonalidade;
+- Produtos com maior faturamento, volume e frequência de compra;
+- Países e clientes mais relevantes;
+- Valor médio dos pedidos;
+- Impacto financeiro de cancelamentos e devoluções;
+- Outliers e problemas de qualidade dos dados;
+- Recomendações práticas para a gestão comercial.
+
+O que muda aqui não é a pergunta, é a ferramenta usada para respondê-la, e o quanto ela permite ir além do que foi pedido.
+
+# 3. Preparando os dados
+
+O carregamento e a preparação replicam exatamente a Aula 3: a mesma coluna de receita por item e o mesmo sinalizador de cancelamento, derivado do prefixo `C` no número da fatura.
+
+```{r}
+
+library(readxl)
+library(tidyverse)
+library(lubridate)
+
+data_path <- file.path("projeto-vendas", "data", "online_retail.xlsx")
+
+retail <- read_excel(data_path) |>
+  rename(
+    invoice_no = InvoiceNo,
+    stock_code = StockCode,
+    description = Description,
+    quantity = Quantity,
+    invoice_date = InvoiceDate,
+    unit_price = UnitPrice,
+    customer_id = CustomerID,
+    country = Country
+  ) |>
+  mutate(
+    invoice_date = as.POSIXct(invoice_date),
+    revenue = quantity * unit_price,
+    is_cancelled = str_starts(str_to_upper(invoice_no), "C")
+  )
+
+```
+
+Os nomes das colunas são padronizados em `snake_case`, convenção adotada no restante do código. Com a base carregada, confirmamos suas dimensões:
+
+```{r}
+
+cat(
+  "Arquivo carregado com sucesso.\n",
+  glue::glue("Dimensão da base: {nrow(retail)} linhas x {ncol(retail)} colunas\n"),
+  sep = ""
+)
+
+```
+
+# 4. Visão geral da base
+
+Antes de qualquer indicador de negócio, o mesmo retrato geral tirado na Aula 3: tamanho, tipos e uma primeira olhada nos números. Estrutura e tipos de dados:
+
+```{r}
+
+glimpse(retail)
+
+```
+
+Primeiras linhas:
+
+```{r}
+
+retail |>
+  slice_head(n = 6)
+
+```
+
+Estatísticas das variáveis numéricas:
+
+```{r}
+
+retail |>
+  select(quantity, unit_price, revenue) |>
+  summary()
+
+```
+
+# 5. Qualidade dos dados
+
+Refaça também o diagnóstico da Aula 3, consolidado em um único quadro: ausentes, duplicatas e a contagem dos suspeitos já conhecidos.
+
+Valores ausentes, coluna a coluna:
+
+```{r}
+
+quality <- tibble(
+  coluna = names(retail),
+  valores_ausentes = map_int(retail, \(column) sum(is.na(column))),
+  percentual_ausente = map_dbl(retail, \(column) mean(is.na(column)) * 100)
+) |>
+  arrange(desc(percentual_ausente)) |>
+  mutate(percentual_ausente = round(percentual_ausente, 2))
+
+quality
+
+```
+
+Duplicatas, considerando somente as colunas originais:
+
+```{r}
+
+original_columns <- c(
+  "invoice_no", "stock_code", "description", "quantity",
+  "invoice_date", "unit_price", "customer_id", "country"
+)
+
+duplicate_count <- retail |>
+  select(all_of(original_columns)) |>
+  duplicated() |>
+  sum()
+
+cat(glue::glue(
+  "Linhas exatamente duplicadas: {scales::comma(duplicate_count)}\n",
+  "Percentual de duplicatas: {scales::number(duplicate_count / nrow(retail), accuracy = 0.0001, scale = 100, suffix = '%')}\n"
+))
+
+```
+
+Registros potencialmente problemáticos:
+
+```{r}
+
+issues <- tibble(
+  metrica = c(
+    "Faturas canceladas", "Quantidade negativa", "Quantidade igual a zero",
+    "Preço negativo", "Preço igual a zero", "Descrição ausente",
+    "Cliente não identificado", "Data inválida ou ausente"
+  ),
+  quantidade = c(
+    sum(retail$is_cancelled),
+    sum(retail$quantity < 0),
+    sum(retail$quantity == 0),
+    sum(retail$unit_price < 0),
+    sum(retail$unit_price == 0),
+    sum(is.na(retail$description)),
+    sum(is.na(retail$customer_id)),
+    sum(is.na(retail$invoice_date))
+  )
+)
+
+issues
+
+```
+
+Valores extremos, quantidade e preço unitário:
+
+```{r}
+
+percentiles <- c(0.01, 0.25, 0.50, 0.75, 0.99)
+
+retail |>
+  summarise(
+    quantidade = list(round(quantile(quantity, percentiles, na.rm = TRUE), 2)),
+    preco_unitario = list(round(quantile(unit_price, percentiles, na.rm = TRUE), 2))
+  ) |>
+  pivot_longer(everything(), names_to = "variavel", values_to = "valores") |>
+  unnest_wider(valores, names_sep = "_")
+
+```
+
+# 6. Isolando as vendas válidas
+
+O mesmo corte definido na Aula 3: exclui cancelamentos e linhas com quantidade ou preço não positivos.
+
+```{r}
+
+sales <- retail |>
+  filter(!is_cancelled, quantity > 0, unit_price > 0)
+
+sales_summary <- sales |>
+  summarise(
+    linhas = n(),
+    pedidos = n_distinct(invoice_no),
+    clientes = n_distinct(customer_id, na.rm = TRUE),
+    unidades = sum(quantity),
+    faturamento_bruto = sum(revenue)
+  )
+
+sales_summary
+
+```
+
+# 7. Indicadores de pedidos, produtos, países e clientes
+
+Com as vendas válidas isoladas, podemos mudar a unidade de análise conforme a pergunta: pedidos, produtos, países ou clientes. Cada tabela abaixo tem uma linha por entidade analisada e reúne as métricas necessárias para responder ao enunciado.
+
+## Valor médio dos pedidos
+
+Primeiro, agregamos os itens de uma mesma fatura. O resultado terá uma linha por pedido, permitindo calcular seu valor médio sem dar mais peso aos pedidos que possuem muitos itens.
+
+```{r}
+
+orders <- sales |>
+  group_by(invoice_no) |> # <1>
+  summarise(
+    order_date = min(invoice_date),
+    customer_id = first(customer_id),
+    country = first(country),
+    item_quantity = sum(quantity),
+    order_value = sum(revenue),
+    .groups = "drop"
+  ) # <2>
+
+```
+
+1. Cada grupo representa uma fatura, portanto uma linha da tabela resultante representa um pedido.
+2. `summarise()` documenta como cada coluna do pedido é obtida a partir das linhas de itens.
+
+```{r}
+
+order_value_summary <- orders |>
+  summarise(
+    ticket_medio = mean(order_value),
+    ticket_mediano = median(order_value)
+  )
+
+order_value_summary
+
+```
+
+Distribuição do valor dos pedidos:
+
+```{r}
+
+orders |>
+  reframe(
+    percentil = c(25, 50, 75, 90, 99),
+    valor_pedido = round(quantile(order_value, percentil / 100), 2)
+  )
+
+```
+
+O ticket médio responde diretamente à pergunta sobre o valor médio dos pedidos. A mediana e os percentis complementam a resposta: se a média estiver muito acima da mediana, poucos pedidos de alto valor estão puxando o indicador para cima.
+
+## Produtos com maior faturamento, volume e frequência
+
+Para comparar produtos, usamos três métricas diferentes:
+
+- `revenue`: faturamento gerado;
+- `units_sold`: unidades vendidas;
+- `order_count`: quantidade de pedidos distintos em que o produto apareceu, nossa medida de frequência de compra.
+
+```{r}
+
+products <- sales |>
+  filter(!is.na(description)) |>
+  group_by(stock_code, description) |>
+  summarise(
+    units_sold = sum(quantity),
+    revenue = sum(revenue),
+    order_count = n_distinct(invoice_no),
+    .groups = "drop"
+  )
+
+```
+
+Produtos com maior faturamento:
+
+```{r}
+
+products |>
+  slice_max(revenue, n = 10, with_ties = FALSE)
+
+```
+
+Produtos com maior volume vendido:
+
+```{r}
+
+products |>
+  slice_max(units_sold, n = 10, with_ties = FALSE)
+
+```
+
+Produtos com maior frequência de compra:
+
+```{r}
+
+products |>
+  slice_max(order_count, n = 10, with_ties = FALSE)
+
+```
+
+Os três rankings não são necessariamente iguais. Um produto pode aparecer em muitos pedidos, mas com poucas unidades por pedido, enquanto outro pode ter grande volume concentrado em poucas compras de atacado.
+
+## Países mais relevantes para o negócio
+
+A relevância de um país é medida por faturamento, quantidade de pedidos e número de clientes identificados. O faturamento ordena a tabela, enquanto as demais colunas ajudam a distinguir mercados amplos de vendas concentradas em poucos compradores.
+
+```{r}
+
+countries <- sales |>
+  group_by(country) |>
+  summarise(
+    revenue = sum(revenue),
+    order_count = n_distinct(invoice_no),
+    customer_count = n_distinct(customer_id, na.rm = TRUE),
+    units_sold = sum(quantity),
+    .groups = "drop"
+  )
+
+top_countries <- countries |>
+  slice_max(revenue, n = 10, with_ties = FALSE)
+
+top_countries
+
+```
+
+## Clientes mais relevantes para o negócio
+
+Como registros sem `customer_id` não podem ser atribuídos a uma pessoa específica, eles são excluídos somente desta agregação. Isso não os remove das demais análises de vendas válidas.
+
+```{r}
+
+identified_sales <- sales |>
+  filter(!is.na(customer_id))
+
+customers <- identified_sales |>
+  group_by(customer_id) |>
+  summarise(
+    revenue = sum(revenue),
+    order_count = n_distinct(invoice_no),
+    units_sold = sum(quantity),
+    country = first(country),
+    .groups = "drop"
+  )
+
+top_customers <- customers |>
+  slice_max(revenue, n = 10, with_ties = FALSE)
+
+top_customers
+
+```
+
+# 8. Cancelamentos e devoluções
+
+O lado espelhado das vendas válidas: tudo o que foi excluído do faturamento bruto calculado na seção 6.
+
+```{r}
+
+cancellations <- retail |>
+  filter(is_cancelled | quantity < 0)
+
+cancellation_summary <- retail |>
+  summarise(
+    faturas_canceladas = n_distinct(invoice_no[is_cancelled]),
+    linhas_quantidade_negativa = sum(quantity < 0),
+    valor_devolucoes_ajustes = abs(sum(revenue[revenue < 0])),
+    receita_liquida = sum(revenue)
+  )
+
+cancellation_summary
+
+```
+
+# 9. Indo além: novas perguntas de negócio
+
+O enunciado da Aula 3 não pedia isto, mas o mesmo dataset permite outras perguntas de gestão. Três exemplos, cada um resolvido com um pipeline `tidyverse` sobre as vendas válidas isoladas na seção 6.
+
+## Produtos mais vendidos por trimestre, no Reino Unido
+
+A maior parte das vendas vem do Reino Unido, sede da empresa. Faz sentido perguntar: quais produtos lideram em unidades vendidas, trimestre a trimestre, só nesse mercado?
+
+```{r}
+
+uk_quarterly_top_products <- sales |>
+  filter(country == "United Kingdom") |>
+  mutate(quarter = paste0(year(invoice_date), "-Q", quarter(invoice_date))) |>
+  group_by(quarter, stock_code, description) |>
+  summarise(
+    units_sold = sum(quantity),
+    revenue = sum(revenue),
+    .groups = "drop"
+  ) |>
+  slice_max(units_sold, n = 5, by = quarter, with_ties = FALSE) |>
+  arrange(quarter, desc(units_sold))
+
+uk_quarterly_top_products
+
+```
+
+`country == "United Kingdom"` só funciona porque conferimos antes o rótulo exato do país nos dados; a Aula 2 já ensinou a não supor esse tipo de valor sem checar.
+
+## Concentração de receita: quantos clientes sustentam o faturamento?
+
+Uma leitura comum em gestão comercial é a curva de Pareto: uma fração pequena de clientes costuma responder por boa parte da receita. Vale checar se isso se confirma aqui.
+
+```{r}
+
+customer_revenue <- customers |>
+  select(customer_id, revenue) |>
+  arrange(desc(revenue)) |>
+  mutate(
+    customer_rank = row_number(),
+    cumulative_share = cumsum(revenue) / sum(revenue)
+  )
+
+customers_for_80pct <- customer_revenue |>
+  filter(cumulative_share >= 0.8) |>
+  slice_head(n = 1) |>
+  pull(customer_rank)
+
+total_customers <- nrow(customer_revenue)
+
+cat(glue::glue(
+  "{customers_for_80pct} de {total_customers} clientes ",
+  "({scales::percent(customers_for_80pct / total_customers, accuracy = 0.1)}) ",
+  "respondem por 80% do faturamento das vendas válidas.\n"
+))
+
+```
+
+Clientes com maior faturamento:
+
+```{r}
+
+customer_revenue |>
+  slice_head(n = 10)
+
+```
+
+## Sazonalidade por dia da semana
+
+A seção 4 já apontou sazonalidade mensal como pergunta em aberto. Antes de chegar lá, um recorte mais fino: existe um dia da semana melhor para vendas?
+
+```{r}
+
+weekday_revenue <- sales |>
+  mutate(weekday = wday(invoice_date, label = TRUE, abbr = FALSE, week_start = 1)) |>
+  group_by(weekday) |>
+  summarise(
+    orders = n_distinct(invoice_no),
+    revenue = sum(revenue),
+    avg_revenue_per_order = revenue / orders,
+    .groups = "drop"
+  ) |>
+  arrange(weekday)
+
+weekday_revenue
+
+```
+
+Vale notar o que falta nos dados: se um dia da semana não aparece na tabela acima, é porque não há faturas registradas nele, o que já é, por si só, um achado sobre a operação.
+
+Recapitulando o que este roteiro entrega:
+
+- Reproduziu em R e tidyverse toda a análise da Aula 3: visão geral, qualidade dos dados, vendas válidas, valor médio dos pedidos, rankings de produtos, países e clientes, e impacto de cancelamentos;
+- Foi além do enunciado original com três perguntas novas: produtos líderes por trimestre no Reino Unido, concentração de receita por cliente e sazonalidade por dia da semana.
+
+O que ainda falta é o mesmo que faltava na Aula 3: sazonalidade mensal completa, investigação direta dos outliers e as recomendações práticas para a gestão comercial.
+
+# Para casa
+
+1. Complete, no seu notebook, os pontos que este roteiro ainda não cobre: sazonalidade mensal completa e a investigação direta dos outliers levantados nas perguntas acima;
+2. Escreva, em células de texto, os critérios que você usou para definir venda válida, cancelamento e registro anômalo, e compare com as respostas que você deu na Aula 3: mudaram?
+3. Encerre com pelo menos três recomendações práticas para a gestão comercial, apoiadas nos números que você calculou;
+4. Antes de considerar o notebook pronto, rode a partir de uma sessão R limpa (Restart R and Run All Chunks, o equivalente R ao Restart Kernel and Run All), e só então commite no `projeto-vendas` com uma mensagem descritiva.
+
+> A ferramenta muda. O raciocínio que você defende sobre os dados, não.

@@ -1,0 +1,504 @@
+---
+title: 'Aula 3 - Análise de Vendas'
+date: last-modified
+toc: true
+format:
+  html: default
+  ipynb: default
+jupyter: python3
+execute:
+  enabled: true
+---
+
+## Motivação
+
+Nas duas últimas aulas você montou a bancada e aprendeu a interrogar dados. Na Aula 1, criou o projeto-vendas com Git e um ambiente isolado. Na Aula 2, carregou o Online Retail, executou o ritual de inspeção inicial e diagnosticou os primeiros problemas de qualidade: cancelamentos disfarçados de quantidade negativa, preços zerados, duplicatas. Você já sabe olhar para os dados. Falta agora responder, com eles, a uma pergunta de negócio de verdade.
+
+É isso que este roteiro propõe, e ele é diferente dos dois anteriores em um ponto importante: aqui não há uma sequência única de células que leva a um resultado combinado de antemão. Há um enunciado, um ponto de partida em código que carrega e prepara a base exatamente como você a deixou na Aula 2, e um espaço de decisões que só você pode tomar. Diagnosticar problemas, como fizemos na aula passada, é relativamente objetivo. Decidir o que fazer com eles, para responder a uma pergunta de gestão, é uma escolha analítica, e escolhas analíticas precisam ser justificadas, não apenas executadas.
+
+Esse é o salto desta aula: sair do papel de quem descreve os dados para o papel de quem os usa para recomendar uma ação.
+
+## Objetivos de aprendizagem
+
+Ao final deste roteiro, você será capaz de:
+
+1. Traduzir uma pergunta de negócio em critérios de análise verificáveis nos dados;
+2. Reaplicar o ritual de inspeção e diagnóstico da Aula 2 para separar vendas válidas de cancelamentos e registros anômalos;
+3. Construir indicadores de negócio (faturamento, ticket médio, produtos e países mais relevantes) a partir de dados tabulares;
+4. Quantificar o impacto financeiro de cancelamentos e devoluções sobre o resultado;
+5. Documentar e justificar, por escrito, os critérios usados na análise, transformando resultados em recomendações práticas.
+
+::: {.callout-tip}
+## Como usar este roteiro
+
+Este roteiro pressupõe o projeto-vendas das Aulas 1 e 2 funcionando, com o Online Retail já baixado em `data/`. As primeiras células carregam e preparam a base, exatamente o ponto em que a Aula 2 parou; a partir daí, o enunciado é o guia. Este script não é a análise completa: é a fundação sobre a qual as respostas ao enunciado devem ser construídas, célula a célula, no seu próprio notebook. Ao final, três perguntas ajudam a testar se os seus critérios estão sólidos antes de entregar.
+:::
+
+# 1. Retomando o projeto
+
+Como sempre, comece verificando onde o projeto parou:
+
+```{python}
+
+# Onde paramos? O git log conta a historia ate aqui:
+!cd ./projeto-vendas && git log --oneline
+
+# E o estado atual? Espera-se uma area de trabalho limpa:
+!cd ./projeto-vendas && git status
+
+```
+
+Se o log mostra os seis commits das Aulas 1 e 2 e o status diz que não há nada a commitar, o ambiente e os dados estão prontos. Nenhuma biblioteca nova é necessária hoje: pandas e openpyxl, instalados na Aula 2, bastam.
+
+# 2. O enunciado
+
+O gestor de vendas da empresa precisa entender o desempenho comercial do último ano e identificar oportunidades para aumentar o faturamento. Com base no histórico de transações, quais produtos, clientes, países e períodos devem ser priorizados em nossa estratégia de vendas, e quais fatores estão prejudicando o resultado, como cancelamentos e devoluções?
+
+Para responder, a análise deverá considerar:
+
+- Produtos com maior faturamento, volume e frequência de compra;
+- Países e clientes mais relevantes para o negócio;
+- Valor médio dos pedidos;
+- Impacto financeiro de cancelamentos e devoluções;
+- Possíveis outliers ou problemas de qualidade dos dados;
+- Evolução mensal do faturamento e identificação de sazonalidade;
+
+Os cientistas de dados deverão definir e justificar os critérios utilizados para diferenciar vendas válidas, cancelamentos, devoluções e registros anômalos.
+
+# 3. Preparando os dados
+
+O ponto de partida é o mesmo carregamento da Aula 2, com duas colunas novas calculadas a partir das originais: a receita de cada item e um sinalizador de cancelamento, derivado do prefixo `C` no número da fatura, exatamente como você confirmou na aula passada.
+
+```{python}
+
+from pathlib import Path
+
+import pandas as pd
+
+data_path = Path("projeto-vendas") / "data" / "online_retail.xlsx"
+
+column_names = {
+    "InvoiceNo": "invoice_no",
+    "StockCode": "stock_code",
+    "Description": "description",
+    "Quantity": "quantity",
+    "InvoiceDate": "invoice_date",
+    "UnitPrice": "unit_price",
+    "CustomerID": "customer_id",
+    "Country": "country",
+}
+
+retail = pd.read_excel(data_path).rename(columns=column_names)
+
+```
+
+Com a base carregada, as mesmas duas colunas calculadas da Aula 2:
+
+```{python}
+
+retail["invoice_date"] = pd.to_datetime(retail["invoice_date"], errors="coerce")
+retail["revenue"] = retail["quantity"] * retail["unit_price"]
+retail["is_cancelled"] = retail["invoice_no"].str.startswith("C", na=False)
+
+```
+
+```{python}
+
+print("Arquivo carregado com sucesso.")
+print(f"Dimensão da base: {retail.shape[0]:,} linhas × {retail.shape[1]} colunas")
+
+```
+
+# 4. Visão geral da base
+
+Antes de qualquer indicador de negócio, refaça o retrato geral que a Aula 2 ensinou a tirar: tamanho, tipos e uma primeira olhada nos números.
+
+```{python}
+
+print("=" * 60)
+print("VISAO GERAL")
+print("=" * 60)
+
+print(f"Numero de linhas: {retail.shape[0]:,}")
+print(f"Numero de colunas originais: {retail.shape[1] - 2}")
+print(f"Data inicial: {retail['invoice_date'].min()}")
+print(f"Data final: {retail['invoice_date'].max()}")
+
+print(f"Quantidade de faturas: {retail['invoice_no'].nunique():,}")
+print(f"Quantidade de clientes: {retail['customer_id'].nunique():,}")
+print(f"Quantidade de produtos: {retail['stock_code'].nunique():,}")
+print(f"Quantidade de paises: {retail['country'].nunique():,}")
+
+```
+
+Colunas e tipos de dados:
+
+```{python}
+
+print(retail.dtypes)
+
+```
+
+Primeiras linhas:
+
+```{python}
+
+display(retail.head())
+
+```
+
+Estatísticas das variáveis numéricas:
+
+```{python}
+
+display(retail[["quantity", "unit_price", "revenue"]].describe().round(2))
+
+```
+
+# 5. Qualidade dos dados
+
+Refaça também o diagnóstico da Aula 2, agora consolidado em um único quadro: ausentes, duplicatas e a contagem dos suspeitos já conhecidos (cancelamentos, quantidades e preços fora do esperado).
+
+```{python}
+
+print("=" * 60)
+print("QUALIDADE DOS DADOS")
+print("=" * 60)
+
+```
+
+Valores ausentes, coluna a coluna:
+
+```{python}
+
+quality = (
+    pd.DataFrame(
+        {
+            "missing_values": retail.isna().sum(),
+            "missing_percentage": retail.isna().mean().mul(100),
+        }
+    )
+    .sort_values("missing_percentage", ascending=False)
+    .rename_axis("column")
+)
+
+display(quality.round(2))
+
+```
+
+Duplicatas, considerando somente as colunas originais:
+
+```{python}
+
+source_columns = [
+    "invoice_no",
+    "stock_code",
+    "description",
+    "quantity",
+    "invoice_date",
+    "unit_price",
+    "customer_id",
+    "country"
+]
+
+duplicate_count = retail.duplicated(subset=source_columns).sum()
+
+print(f"Linhas exatamente duplicadas: {duplicate_count:,}")
+print(f"Percentual de duplicatas: {duplicate_count / len(retail) * 100:.2f}%")
+
+```
+
+Registros potencialmente problemáticos:
+
+```{python}
+
+issues = pd.Series(
+    {
+        "Faturas canceladas": retail["is_cancelled"].sum(),
+        "Quantidade negativa": retail["quantity"].lt(0).sum(),
+        "Quantidade igual a zero": retail["quantity"].eq(0).sum(),
+        "Preço negativo": retail["unit_price"].lt(0).sum(),
+        "Preço igual a zero": retail["unit_price"].eq(0).sum(),
+        "Descrição ausente": retail["description"].isna().sum(),
+        "Cliente não identificado": retail["customer_id"].isna().sum(),
+        "Data inválida ou ausente": retail["invoice_date"].isna().sum(),
+    },
+    name="quantity",
+)
+
+issues.to_frame()
+
+```
+
+Valores extremos, quantidade e preço unitário:
+
+```{python}
+
+percentiles = [0.01, 0.25, 0.50, 0.75, 0.99]
+retail["quantity"].describe(percentiles=percentiles).round(2)
+
+```
+
+```{python}
+
+retail["unit_price"].describe(percentiles=percentiles).round(2)
+
+```
+
+# 6. Isolando as vendas válidas
+
+Aqui começa a parte que o enunciado pede e que a Aula 2 deliberadamente não respondeu: o que conta como venda válida? O corte abaixo é um ponto de partida razoável, não a palavra final, exclui cancelamentos e linhas com quantidade ou preço não positivos, mas você pode (e deve) questioná-lo diante do que encontrar.
+
+```{python}
+
+valid_sales_filter = (
+    ~retail["is_cancelled"]
+    & retail["quantity"].gt(0)
+    & retail["unit_price"].gt(0)
+)
+
+sales = retail.loc[valid_sales_filter].copy()  # <1>
+
+```
+
+1. `.copy()` cria um DataFrame independente para as vendas válidas e evita alterações acidentais em `retail` nas etapas seguintes.
+
+```{python}
+
+print("=" * 60)
+print("VENDAS POSITIVAS")
+print("=" * 60)
+
+print(f"Linhas de vendas positivas: {len(sales):,}")
+print(f"Pedidos validos: {sales['invoice_no'].nunique():,}")
+print(f"Clientes identificados: {sales['customer_id'].nunique():,}")
+print(f"Unidades vendidas: {sales['quantity'].sum():,}")
+print(f"Faturamento bruto: £ {sales['revenue'].sum():,.2f}")
+
+```
+
+# 7. Indicadores de pedidos, produtos, países e clientes
+
+Com as vendas válidas isoladas, podemos mudar a unidade de análise conforme a pergunta: pedidos, produtos, países ou clientes. Cada tabela abaixo tem uma linha por entidade analisada e reúne as métricas necessárias para responder ao enunciado.
+
+## Valor médio dos pedidos
+
+Primeiro, agregamos os itens de uma mesma fatura. O resultado terá uma linha por pedido, permitindo calcular seu valor médio sem dar mais peso aos pedidos que possuem muitos itens.
+
+```{python}
+
+orders = (
+    sales
+    .groupby("invoice_no", as_index=False)  # <1>
+    .agg(
+        order_date=("invoice_date", "min"),
+        customer_id=("customer_id", "first"),
+        country=("country", "first"),
+        item_quantity=("quantity", "sum"),
+        order_value=("revenue", "sum"),
+    )  # <2>
+)
+
+```
+
+1. Cada grupo representa uma fatura, portanto uma linha da tabela resultante representa um pedido.
+2. A agregação nomeada documenta, para cada nova coluna, a variável de origem e a função aplicada.
+
+```{python}
+
+order_value_summary = pd.Series(
+    {
+        "ticket_medio": orders["order_value"].mean(),
+        "ticket_mediano": orders["order_value"].median(),
+    },
+    name="valor_em_libras",
+)
+
+order_value_summary.round(2).to_frame()
+
+```
+
+Distribuição do valor dos pedidos:
+
+```{python}
+
+order_percentiles = [0.25, 0.50, 0.75, 0.90, 0.99]
+orders["order_value"].describe(percentiles=order_percentiles).round(2)
+
+```
+
+O ticket médio responde diretamente à pergunta sobre o valor médio dos pedidos. A mediana e os percentis complementam a resposta: se a média estiver muito acima da mediana, poucos pedidos de alto valor estão puxando o indicador para cima.
+
+## Produtos com maior faturamento, volume e frequência
+
+Para comparar produtos, usamos três métricas diferentes:
+
+- `revenue`: faturamento gerado;
+- `units_sold`: unidades vendidas;
+- `order_count`: quantidade de pedidos distintos em que o produto apareceu, nossa medida de frequência de compra.
+
+```{python}
+
+products = (
+    sales
+    .dropna(subset=["description"])
+    .groupby(["stock_code", "description"], as_index=False)
+    .agg(
+        units_sold=("quantity", "sum"),
+        revenue=("revenue", "sum"),
+        order_count=("invoice_no", "nunique"),
+    )
+)
+
+```
+
+Produtos com maior faturamento:
+
+```{python}
+
+top_products_by_revenue = products.nlargest(10, "revenue")
+top_products_by_revenue.round(2)
+
+```
+
+Produtos com maior volume vendido:
+
+```{python}
+
+top_products_by_volume = products.nlargest(10, "units_sold")
+top_products_by_volume.round(2)
+
+```
+
+Produtos com maior frequência de compra:
+
+```{python}
+
+top_products_by_frequency = products.nlargest(10, "order_count")
+top_products_by_frequency.round(2)
+
+```
+
+Os três rankings não são necessariamente iguais. Um produto pode aparecer em muitos pedidos, mas com poucas unidades por pedido, enquanto outro pode ter grande volume concentrado em poucas compras de atacado.
+
+## Países mais relevantes para o negócio
+
+A relevância de um país é medida por faturamento, quantidade de pedidos e número de clientes identificados. O faturamento ordena a tabela, enquanto as demais colunas ajudam a distinguir mercados amplos de vendas concentradas em poucos compradores.
+
+```{python}
+
+countries = (
+    sales
+    .groupby("country", as_index=False)
+    .agg(
+        revenue=("revenue", "sum"),
+        order_count=("invoice_no", "nunique"),
+        customer_count=("customer_id", "nunique"),
+        units_sold=("quantity", "sum"),
+    )
+)
+
+top_countries = countries.nlargest(10, "revenue")
+top_countries.round(2)
+
+```
+
+## Clientes mais relevantes para o negócio
+
+Como registros sem `customer_id` não podem ser atribuídos a uma pessoa específica, eles são excluídos somente desta agregação. Isso não os remove das demais análises de vendas válidas.
+
+```{python}
+
+identified_sales = sales.dropna(subset=["customer_id"])
+
+customers = (
+    identified_sales
+    .groupby("customer_id", as_index=False)
+    .agg(
+        revenue=("revenue", "sum"),
+        order_count=("invoice_no", "nunique"),
+        units_sold=("quantity", "sum"),
+        country=("country", "first"),
+    )
+)
+
+top_customers = customers.nlargest(10, "revenue")
+top_customers.round(2)
+
+```
+
+# 8. Cancelamentos e devoluções
+
+Por fim, o enunciado pede o impacto financeiro de cancelamentos e devoluções, o lado espelhado das vendas válidas: tudo o que foi excluído do faturamento bruto calculado na seção 6.
+
+```{python}
+
+cancellation_filter = retail["is_cancelled"] | retail["quantity"].lt(0)
+cancellations = retail.loc[cancellation_filter].copy()
+
+refunded_amount = abs(retail.loc[retail["revenue"] < 0, "revenue"].sum())
+
+```
+
+```{python}
+
+print(f"Faturas canceladas: {retail.loc[retail['is_cancelled'], 'invoice_no'].nunique():,}")
+print(f"Linhas com quantidade negativa: {(retail['quantity'] < 0).sum():,}")
+print(f"Valor absoluto das devolucoes/ajustes: £ {refunded_amount:,.2f}")
+print(f"Receita liquida de toda a base: £ {retail['revenue'].sum():,.2f}")
+
+```
+
+Recapitulando o que este roteiro entrega:
+
+- Retomou o projeto-vendas e os dados exatamente como a Aula 2 os deixou;
+- Refez a visão geral e o diagnóstico de qualidade da base completa;
+- Propôs um critério inicial de vendas válidas, separando-as dos cancelamentos;
+- Calculou o ticket médio e comparou os produtos por faturamento, volume e frequência de compra;
+- Identificou os países e clientes mais relevantes por meio de métricas comerciais explícitas;
+- Quantificou o impacto financeiro de cancelamentos e devoluções.
+
+O que ainda falta é o que transforma um script em uma análise completa: sazonalidade mensal, investigação dos outliers e, principalmente, as recomendações práticas para a gestão comercial que o enunciado pede.
+
+# Perguntas para consolidar
+
+Três perguntas para testar seus critérios antes de considerar a análise pronta. Elas não têm uma resposta única certa: o que importa é que você consiga justificar a escolha que fez.
+
+**Pergunta 1: cancelamento é a mesma coisa que devolução?**
+
+O critério de vendas válidas da seção 6 trata toda linha com `is_cancelled` verdadeiro ou `quantity` negativa da mesma forma. Isso é preciso o suficiente para o enunciado, que pede o impacto de cancelamentos e devoluções separadamente?
+
+::: {.callout-note collapse="true"}
+## Como pensar sobre isso
+
+Releia o dicionário de variáveis da Aula 2: `invoice_no` começando com `C` é a convenção do sistema para cancelamento, registrado no mesmo momento da venda. Uma devolução, no mundo real, costuma acontecer depois, como um evento separado, e pode ou não gerar uma fatura com `C`. Verifique nos próprios dados se todas as linhas com `quantity` negativa têm `invoice_no` começando com `C`, como fizemos na Aula 2; se houver exceções, elas podem ser a diferença entre as duas categorias que o enunciado pede para separar.
+:::
+
+**Pergunta 2: quando um outlier é erro e quando é atacado legítimo?**
+
+O describe da seção 5 mostra valores de `quantity` na casa das dezenas de milhares em uma única linha. Excluir essas linhas do faturamento por serem outliers, sem verificar mais nada, é uma decisão segura?
+
+::: {.callout-note collapse="true"}
+## Como pensar sobre isso
+
+A documentação do dataset já avisa: há muitos clientes atacadistas nesta base. Antes de descartar uma linha como erro, olhe o `customer_id` e o `country` dela: um mesmo cliente comprando o mesmo produto em grande volume, repetidamente, é um padrão de atacado, não um erro de digitação isolado. Descartar esses registros sem checar pode subestimar exatamente os clientes mais relevantes que o enunciado pede para identificar.
+:::
+
+**Pergunta 3: qual recorte de "vendas válidas" você vai defender?**
+
+Além de cancelamentos, a seção 6 também exclui `quantity` igual a zero e `unit_price` igual a zero. Existem linhas com preço zero e `customer_id` ausente ao mesmo tempo, como a Aula 2 pediu para você investigar?
+
+::: {.callout-note collapse="true"}
+## Como pensar sobre isso
+
+Preço zero sem cliente identificado tem cara de brinde, amostra grátis ou ajuste interno de estoque, não de uma venda. Se for esse o caso, mantê-las no cálculo de faturamento infla artificialmente o volume sem representar receita real. O ponto não é decorar essa resposta, mas perceber que cada exclusão do filtro precisa de uma evidência nos próprios dados, não de uma suposição.
+:::
+
+# Para casa
+
+1. Complete, no seu notebook, os pontos do enunciado que este roteiro ainda não cobre: evolução mensal do faturamento e investigação direta dos outliers levantados nas perguntas acima;
+2. Escreva, em células de texto, os critérios que você usou para definir venda válida, cancelamento e registro anômalo, e por quê;
+3. Encerre com pelo menos três recomendações práticas para a gestão comercial, apoiadas nos números que você calculou;
+4. Antes de considerar o notebook pronto, use Restart Kernel and Run All, como a Aula 1 ensinou, e só então commite no `projeto-vendas` com uma mensagem descritiva.
+
+> Uma análise só vira decisão quando alguém assume a responsabilidade pelos critérios que usou. Esconder-se atrás do código é fácil; justificar a escolha é o trabalho de verdade.
