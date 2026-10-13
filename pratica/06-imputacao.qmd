@@ -1,0 +1,143 @@
+# Prática 06 - Imputação de Dados
+
+```{python}
+
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy import stats
+
+from sklearn.preprocessing import (
+    MinMaxScaler,
+    PowerTransformer,
+    RobustScaler,
+    StandardScaler,
+)
+
+
+```
+
+## 1. Carregando os dados e checando os tipos, valores nulos e registros duplicados
+```{python}
+imoveis = pd.read_csv("../aulas/imoveis-sao-paulo/data/imoveis_sao_paulo.csv")
+
+resume = pd.DataFrame({
+    'Tipos': imoveis.dtypes,
+    '% Nulos': round(imoveis.isna().mean() * 100, 2),
+    'Registros duplicados': imoveis.duplicated().sum()
+})
+
+display(resume)
+```
+
+### 1.1 Padronização e limpeza
+Ao analisar o resumo do dataset, podemos observar que existem algumas colunas com valores nulos e registros duplicados, tipos inconsistentes com o dados. 
+
+```{python}
+imoveis = (
+        imoveis.drop_duplicates()
+        .rename(columns={
+            'parking spaces': 'parking_spaces',
+            'hoa (R$)' : 'hoa',
+            'rent amount (R$)': 'rent_amount',
+            'property tax (R$)': 'property_tax',
+            'total (R$)': 'total',
+        })
+        .reset_index(drop=True)
+        .assign(
+            property_type=lambda df: np.where(
+                df['floor'].isna(), 'Casa', 'Apartamento',
+            )
+        )
+)
+
+imoveis.head()
+
+
+```
+### Analisar proporção dos valores nulos, ordem de grandeza e distribuição dos dados
+
+```{python}
+missing = imoveis[["hoa", "parking_spaces", "floor"]]. isna().mean() * 100
+
+scales = imoveis[["rooms", "area", "rent_amount"]].median()
+
+limit_99 = imoveis["rent_amount"].quantile(0.99)
+
+```
+
+```{python}
+
+fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(15, 5))
+
+# ============================================
+
+sns.barplot(
+    x=missing.index,
+    y=missing.values,
+    ax=axes[0]
+)
+axes[0].set(
+    title="Proporção de valores nulos (%)",
+    ylabel="Proporção (%)"
+)
+
+# ============================================
+
+sns.barplot(
+    x=scales.index,
+    y=scales.values,
+    ax=axes[1],
+)
+
+axes[1].set(
+    title="Mediana dos valores",
+    ylabel="Mediana",
+    yscale="log"
+)
+# ============================================
+
+sns.histplot(
+    imoveis['rent_amount'],
+    binrange=(0, limit_99),
+    ax=axes[2]
+)
+
+axes[2].set(
+    title="Distribuição do valor do aluguel",
+    xlabel="Valor do aluguel (R$)",
+    ylabel="Imóveis"
+)
+
+#=============== Valore das medianas ==========================
+display(scales)
+
+```
+
+Ao analisar os gráficos, podemos observar três aspectos importantes:
+
+#=============== Valore das medianas ==========================
+
+
+1. As colunas `hoa`, `parking_spaces` possuem proporção de valores nulos de cerca de 2% e 1% respectivamente, enquanto a coluna `floor` é de 15%.
+
+3. Assimetria à direita na distribuição do valor do aluguel, com a mediana em torno de R$ 2.900,00 e o limite de 99% dos valores em torno de R$ 7.500,00.
+
+```{python}
+
+imoveis.groupby('property_type').agg(
+    imoveis=('property_type', 'size'),
+    prop_nulos=('floor', lambda x: round(x.isna().mean() * 100, 2))
+)
+
+```
+
+```{python}
+
+```
+
+```{python}
+
+```
