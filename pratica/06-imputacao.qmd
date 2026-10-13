@@ -16,10 +16,12 @@ from sklearn.preprocessing import (
     StandardScaler,
 )
 
+sns.set_theme(style="whitegrid", palette="colorblind")
 
 ```
 
 ## 1. Carregando os dados e checando os tipos, valores nulos e registros duplicados
+
 ```{python}
 imoveis = pd.read_csv("../aulas/imoveis-sao-paulo/data/imoveis_sao_paulo.csv")
 
@@ -33,7 +35,8 @@ display(resume)
 ```
 
 ### 1.1 Padronização e limpeza
-Ao analisar o resumo do dataset, podemos observar que existem algumas colunas com valores nulos e registros duplicados, tipos inconsistentes com o dados. 
+
+Ao analisar o resumo do dataset, podemos observar que existem algumas colunas com valores nulos e registros duplicados, tipos inconsistentes com o dados.
 
 ```{python}
 imoveis = (
@@ -57,6 +60,7 @@ imoveis.head()
 
 
 ```
+
 ### Analisar proporção dos valores nulos, ordem de grandeza e distribuição dos dados
 
 ```{python}
@@ -118,12 +122,11 @@ display(scales)
 
 Ao analisar os gráficos, podemos observar três aspectos importantes:
 
-#=============== Valore das medianas ==========================
+1.  As colunas `hoa`, `parking_spaces` possuem proporção de valores nulos de cerca de 2% e 1% respectivamente, enquanto a coluna `floor` é de 15%.
 
+2.  Assimetria à direita na distribuição do valor do aluguel, com a mediana em torno de R\$ 2.900,00 e o limite de 99% dos valores em torno de R\$7.500,00.
 
-1. As colunas `hoa`, `parking_spaces` possuem proporção de valores nulos de cerca de 2% e 1% respectivamente, enquanto a coluna `floor` é de 15%.
-
-3. Assimetria à direita na distribuição do valor do aluguel, com a mediana em torno de R$ 2.900,00 e o limite de 99% dos valores em torno de R$ 7.500,00.
+## 2. Analisando a proporção por tipo de imóvel
 
 ```{python}
 
@@ -134,9 +137,164 @@ imoveis.groupby('property_type').agg(
 
 ```
 
+## Imputação de dados
+
+Como as colunas floor e total_floors é uma lacuna real por se tratar de casas, logo não faz sentido imputar valores para essas colunas. Já as colunas hoa e parking_spaces podem ser imputadas com a mediana dos valores. Para isso é necessário remover alguns valores, imputar e comparar.
+
+```{python}
+# Removendo os valores nulos das colunas hoa e parking_spaces
+imoveis_true = (
+    imoveis.dropna(subset=["hoa", "parking_spaces"])
+    .reset_index(drop=True)
+)
+imoveis_true.isna().mean().mul(100).round(2)
+
+```
+
+### Remoção de valores 
+Criando valores nulos aleatórios para as colunas rooms, rent_amount e furniture, após
+```{python}
+
+rng = np.random.default_rng(42)
+
+def erase_at_random(values, share):
+    return values.mask(rng.random(len(values)) < share)
+
+imoveis_missing = (
+    imoveis_true.assign(
+        rooms=lambda df: erase_at_random(df["rooms"], 0.10),
+        rent_amount=lambda df: erase_at_random(df["rent_amount"], 0.15),
+        furniture=lambda df: erase_at_random(df["furniture"], 0.08),
+    )
+)
+
+imoveis_missing.isna().mean().mul(100).round(2).to_frame(name="Ausentes (%)")
+```
+
+
+```{python}
+# Calculando a média e mediana do valor do aluguel
+
+rent_mean = round(imoveis_missing["rent_amount"].mean(), 2)
+rent_median = round(imoveis_missing["rent_amount"].median(), 2)
+
+display(pd.DataFrame({
+    "Média": rent_mean,
+    "Mediana": rent_median
+}, index=["Valor do aluguel (R$)"]).T)
+
+```
+
+Para imputar os valores nulos do aluguel, podemos utilizar a mediana do valor do aluguel por tier, que é uma variável categórica que indica a faixa de preço do imóvel. Dessa forma, podemos preencher os valores nulos com a mediana do aluguel de imóveis similares.
+
+```{python}
+rent_group = (
+    imoveis_missing.groupby("tier")["rent_amount"]
+    .transform(lambda x: x.fillna(x.median()))
+    .fillna(rent_median)
+)
+```
+
+
+```{python}
+# Versões do aluguel a comparar
+rent_versions = {
+    "Original": imoveis_true.rent_amount,
+    "Com lacunas": imoveis_missing.rent_amount,
+    "Média": imoveis_missing.rent_amount.fillna(rent_mean),
+    "Mediana": imoveis_missing.rent_amount.fillna(rent_median),
+    "Mediana por tier": rent_group,
+}
+```
+
+
+```{python}
+limit = imoveis_true.rent_amount.quantile(.99)
+
+fig, axes = plt.subplots(nrows=1, ncols=5, figsize=(20, 4), sharey=True)
+
+
+for ax, (label, rent) in zip(axes, rent_versions.items()):
+    sns.histplot(
+        rent,
+        binrange=(0, limit),
+        ax=ax
+    )
+    ax.set(
+        title=label,
+        xlabel="Valor do aluguel (R$)",
+        ylabel="Imóveis"
+    )
+
+    if label == "Média":
+        ax.axvline(
+            rent_mean, 
+            color="red", 
+            linestyle="--"
+        )
+    if label == "Mediana":
+        ax.axvline(
+            rent_median, 
+            color="green", 
+            linestyle="--"
+        )
+
+plt.tight_layout()
+plt.show()
+```
+
+
+Paa avaliar a qualidade da imputação, podemos calcular o erro médio absoluto (MAE) entre os valores originais e os valores imputados. Quanto menor o MAE, melhor a imputação.
+
+```{python}
+rent_missing = imoveis_missing.rent_amount.isna()
+truth = imoveis_true.loc[rent_missing, "rent_amount"]
+
+pd.Series({
+    "Media": (truth  - rent_mean).abs().mean(),
+    "Mediana": (truth  - rent_median).abs().mean(),
+    "Mediana por tier": (truth  - rent_group[rent_missing]).abs().mean()
+}).round(2).to_frame(name="MAE")
+```
+
+### Variáveis categóricas
+
+```{python}
+furniture_mode = (
+    imoveis_missing.furniture.mode().iloc[0]
+)
+
+furniture_mode
+```
+
+
+
+```{python}
+pd.concat({
+    "Original": imoveis_missing.furniture.value_counts(dropna=False),
+    "Moda": imoveis_missing.furniture.fillna(furniture_mode).value_counts()
+}, axis=1, ).fillna(0)
+```
+
+Na variável quantitativa discreta, podemos utilizar a média, mediana ou moda para imputar os valores nulos. No caso da variável `rooms`, podemos calcular a média, mediana e moda dos valores não nulos e comparar com os valores originais.
+```{python}
+(
+    pd.Series({
+        "Média" : imoveis_missing.rooms.mean(),
+        "Mediana" : imoveis_missing.rooms.median(),
+        "Moda" : imoveis_missing.rooms.mode().iloc[0]
+    }).to_frame(name="Imputação").round(2)
+)
+
+```
+
+
+
 ```{python}
 
 ```
+
+
 
 ```{python}
 
