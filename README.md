@@ -1,4 +1,4 @@
-# 📊 Ciência de Dados — Unidade 2
+# 📊 Ciência de Dados
 
 Repositório dedicado ao conteúdo, roteiros e atividades práticas da **Unidade 2** da disciplina de **Ciência de Dados**. O foco desta unidade é construir uma base sólida em análise de dados, reprodutibilidade científica, manipulação de dados tabulares e métodos estatísticos.
 

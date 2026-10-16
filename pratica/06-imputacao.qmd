@@ -36,24 +36,24 @@ display(resume)
 
 ### 1.1 Padronização e limpeza
 
-Ao analisar o resumo do dataset, podemos observar que existem algumas colunas com valores nulos e registros duplicados, tipos inconsistentes com o dados.
+Ao analisar o resumo do dataset, observamos algumas colunas com valores nulos e registros duplicados. A seguir, removemos as duplicatas, padronizamos os nomes das colunas e criamos a coluna `property_type` (imóveis sem informação de andar são classificados como casas).
 
 ```{python}
 imoveis = (
-        imoveis.drop_duplicates()
-        .rename(columns={
-            'parking spaces': 'parking_spaces',
-            'hoa (R$)' : 'hoa',
-            'rent amount (R$)': 'rent_amount',
-            'property tax (R$)': 'property_tax',
-            'total (R$)': 'total',
-        })
-        .reset_index(drop=True)
-        .assign(
-            property_type=lambda df: np.where(
-                df['floor'].isna(), 'Casa', 'Apartamento',
-            )
+    imoveis.drop_duplicates()
+    .rename(columns={
+        'parking spaces': 'parking_spaces',
+        'hoa (R$)' : 'hoa',
+        'rent amount (R$)': 'rent_amount',
+        'property tax (R$)': 'property_tax',
+        'total (R$)': 'total',
+    })
+    .reset_index(drop=True)
+    .assign(
+        property_type=lambda df: np.where(
+            df['floor'].isna(), 'Casa', 'Apartamento',
         )
+    )
 )
 
 imoveis.head()
@@ -61,16 +61,20 @@ imoveis.head()
 
 ```
 
-### Analisar proporção dos valores nulos, ordem de grandeza e distribuição dos dados
+### 1.2 Proporção de valores nulos, ordem de grandeza e distribuição dos dados
+
+Calculamos o percentual de nulos, a mediana das variáveis e o percentil 99 do aluguel para usar nos gráficos.
 
 ```{python}
-missing = imoveis[["hoa", "parking_spaces", "floor"]]. isna().mean() * 100
+missing = imoveis[["hoa", "parking_spaces", "floor"]].isna().mean() * 100
 
 scales = imoveis[["rooms", "area", "rent_amount"]].median()
 
-limit_99 = imoveis["rent_amount"].quantile(0.99)
+limit_99 = imoveis.rent_amount.quantile(0.99)
 
 ```
+
+Plotamos os três gráficos lado a lado para visualizar os problemas da base.
 
 ```{python}
 
@@ -116,17 +120,19 @@ axes[2].set(
 )
 
 #=============== Valore das medianas ==========================
-display(scales)
+display(scales.to_frame(name="Mediana"))
 
 ```
 
 Ao analisar os gráficos, podemos observar três aspectos importantes:
 
-1.  As colunas `hoa`, `parking_spaces` possuem proporção de valores nulos de cerca de 2% e 1% respectivamente, enquanto a coluna `floor` é de 15%.
+1. As colunas `hoa` e `parking_spaces` possuem baixa proporção de valores nulos (cerca de 2% e 1%), enquanto `floor` chega a 15%.
+2. As variáveis `rooms`, `area` e `rent_amount` estão em ordens de grandeza bem diferentes.
+3. Há forte assimetria à direita na distribuição do aluguel, com mediana em torno de R\$ 2.900,00 e cauda longa.
 
-2.  Assimetria à direita na distribuição do valor do aluguel, com a mediana em torno de R\$ 2.900,00 e o limite de 99% dos valores em torno de R\$7.500,00.
+## 2. Ausência estrutural por tipo de imóvel
 
-## 2. Analisando a proporção por tipo de imóvel
+Verificamos a quantidade de imóveis e a proporção de nulos em `floor` para cada tipo de imóvel.
 
 ```{python}
 
@@ -137,9 +143,9 @@ imoveis.groupby('property_type').agg(
 
 ```
 
-## Imputação de dados
+## 3. Imputação de dados
 
-Como as colunas floor e total_floors é uma lacuna real por se tratar de casas, logo não faz sentido imputar valores para essas colunas. Já as colunas hoa e parking_spaces podem ser imputadas com a mediana dos valores. Para isso é necessário remover alguns valores, imputar e comparar.
+Nas colunas `floor` e `total_floors`, a ausência é estrutural por se tratar de casas, logo não faz sentido imputar valores numéricos. Já para testar estratégias de imputação, criamos uma base gabarito (`imoveis_true`) sem nulos em `hoa` e `parking_spaces` para apagar valores de forma controlada, imputar e comparar o erro.
 
 ```{python}
 # Removendo os valores nulos das colunas hoa e parking_spaces
@@ -151,8 +157,8 @@ imoveis_true.isna().mean().mul(100).round(2)
 
 ```
 
-### Remoção de valores 
-Criando valores nulos aleatórios para as colunas rooms, rent_amount e furniture, após
+### 3.1 Simulando valores ausentes
+Criamos valores nulos aleatórios nas colunas `rooms` (10%), `rent_amount` (15%) e `furniture` (8%) para avaliar o impacto de cada método de imputação.
 ```{python}
 
 rng = np.random.default_rng(42)
@@ -171,6 +177,7 @@ imoveis_missing = (
 imoveis_missing.isna().mean().mul(100).round(2).to_frame(name="Ausentes (%)")
 ```
 
+Calculamos a média e a mediana do aluguel para usar na imputação simples.
 
 ```{python}
 # Calculando a média e mediana do valor do aluguel
@@ -185,7 +192,7 @@ display(pd.DataFrame({
 
 ```
 
-Para imputar os valores nulos do aluguel, podemos utilizar a mediana do valor do aluguel por tier, que é uma variável categórica que indica a faixa de preço do imóvel. Dessa forma, podemos preencher os valores nulos com a mediana do aluguel de imóveis similares.
+Além da média e da mediana global, podemos imputar o aluguel usando a mediana agrupada por `tier` (padrão do imóvel), preenchendo cada lacuna de acordo com imóveis similares.
 
 ```{python}
 rent_group = (
@@ -195,6 +202,7 @@ rent_group = (
 )
 ```
 
+Reunimos todas as versões do aluguel em um dicionário para facilitar a comparação.
 
 ```{python}
 # Versões do aluguel a comparar
@@ -207,6 +215,7 @@ rent_versions = {
 }
 ```
 
+Plotamos os histogramas de cada versão para comparar o efeito na distribuição.
 
 ```{python}
 limit = imoveis_true.rent_amount.quantile(.99)
@@ -239,12 +248,12 @@ for ax, (label, rent) in zip(axes, rent_versions.items()):
             linestyle="--"
         )
 
-plt.tight_layout()
 plt.show()
 ```
 
+Nos histogramas, a média e a mediana global concentram todas as lacunas em um único valor (criando um pico artificial), enquanto a mediana por `tier` distribui melhor as estimativas.
 
-Paa avaliar a qualidade da imputação, podemos calcular o erro médio absoluto (MAE) entre os valores originais e os valores imputados. Quanto menor o MAE, melhor a imputação.
+Para avaliar a precisão de cada estratégia, calculamos o erro absoluto médio (MAE) apenas nas posições que foram imputadas. Quanto menor o MAE, menor o erro em relação ao valor real.
 
 ```{python}
 rent_missing = imoveis_missing.rent_amount.isna()
@@ -255,9 +264,12 @@ pd.Series({
     "Mediana": (truth  - rent_median).abs().mean(),
     "Mediana por tier": (truth  - rent_group[rent_missing]).abs().mean()
 }).round(2).to_frame(name="MAE")
+
 ```
 
-### Variáveis categóricas
+### 3.2 Variáveis categóricas e discretas
+
+Para variáveis categóricas como `furniture`, não é possível calcular média ou mediana, então utilizamos a moda (categoria mais frequente), o que acaba aumentando artificialmente a contagem dessa categoria.
 
 ```{python}
 furniture_mode = (
@@ -267,7 +279,7 @@ furniture_mode = (
 furniture_mode
 ```
 
-
+Comparamos a contagem das categorias antes e depois de preencher com a moda.
 
 ```{python}
 pd.concat({
@@ -276,7 +288,7 @@ pd.concat({
 }, axis=1, ).fillna(0)
 ```
 
-Na variável quantitativa discreta, podemos utilizar a média, mediana ou moda para imputar os valores nulos. No caso da variável `rooms`, podemos calcular a média, mediana e moda dos valores não nulos e comparar com os valores originais.
+Já para uma variável quantitativa discreta como `rooms`, a média gera um valor fracionário que não faz sentido prático para contagem de quartos, sendo mais adequado usar a mediana ou a moda.
 ```{python}
 (
     pd.Series({
@@ -290,12 +302,355 @@ Na variável quantitativa discreta, podemos utilizar a média, mediana ou moda p
 
 
 
+## 4. Escalonamento
+
+Aplicamos `StandardScaler`, `RobustScaler` e `MinMaxScaler` no valor do aluguel para colocar os dados em escalas comparáveis.
+
 ```{python}
+
+rent_frame = imoveis_true[["rent_amount"]]
+
+scaled = {
+    "Original": rent_frame.rent_amount.to_numpy(),
+    "Standard": StandardScaler().fit_transform(rent_frame).ravel(),
+    "Robust": RobustScaler().fit_transform(rent_frame).ravel(),
+    "MinMax": MinMaxScaler().fit_transform(rent_frame).ravel(),
+}
+
+imoveis_true.isna().mean().mul(100).round(2).to_frame(name="Ausentes (%)")
+```
+
+Visualizamos os histogramas após o escalonamento. Note que a escala do eixo X muda, mas a forma da distribuição e a assimetria continuam iguais.
+
+```{python}
+
+fig, axes = plt.subplots(nrows=1, ncols=4, figsize=(20, 4))
+
+for ax, (label, values) in zip(axes, scaled.items()):
+    sns.histplot(values, ax=ax, color='blue')
+    ax.set(
+        title=f"{label}/assimentria = {stats.skew(values).round(2)}",
+        xlabel="Escala",
+        ylabel="Imóveis"
+    )
+
+plt.tight_layout()
+
+plt.show()
+```
+
+### 4.1 Sensibilidade a valores extremos
+
+Adicionamos um valor extremo fictício de R\$ 500 mil para ver como ele afeta o `MinMaxScaler`.
+
+```{python}
+
+with_extreme = pd.concat(
+    [rent_frame, pd.DataFrame({"rent_amount": [500_000.]})],
+    ignore_index=True,
+)
+
+minmax_extreme = ( MinMaxScaler().fit_transform(with_extreme).ravel() )
+    
+```
+
+Comparamos o `MinMaxScaler` sem e com o valor extremo, mostrando como um único outlier comprime os demais dados perto de zero.
+
+```{python}
+
+# Min-Max sem e com o valor extremo
+fig, axes = plt.subplots(1, 2, figsize=(10, 4), sharey=True)
+
+for ax, values, title in zip(
+    axes,
+    [scaled["MinMax"], minmax_extreme],
+    ["Sem extremo", "Com aluguel de R$ 500 mil"],
+):
+    sns.histplot(
+        values,
+        bins=50,
+        ax=ax,
+        color="red",
+    )
+    ax.set(
+        title=title,
+        xlabel="Escala Min-Max",
+        ylabel="Imóveis",
+    )
+
+plt.tight_layout()
+plt.show()
+
+```
+
+## 5. Transformações não lineares
+
+### 5.1 Aluguel positivo: log e Box-Cox
+
+Como o aluguel possui apenas valores positivos, aplicamos `log` e `Box-Cox` para reduzir a assimetria da cauda longa.
+
+```{python}
+
+rent = imoveis_true.rent_amount
+
+boxcox_rent, boxcox_lambda = stats.boxcox(rent)
+
+rent_transformed = {
+    "Original": rent,
+    "log": np.log(rent),
+    f"box-cox (λ={boxcox_lambda:.2f})": boxcox_rent,
+}
+
+```
+
+Plotamos os histogramas para comparar a redução da assimetria após as transformações.
+
+```{python}
+
+fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(14, 4))
+
+for ax, (label, values) in zip(axes, rent_transformed.items()):
+    sns.histplot(values, bins=50, ax=ax, color="purple")
+    ax.set(
+        title=f"{label}\nassimentria = {stats.skew(values):.2f}",
+        xlabel="Escala",
+        ylabel="Imóveis"
+    )
+
+
+plt.tight_layout()
+plt.show()
+
+```
+
+### 5.2 Distância com zeros: log1p e Yeo-Johnson
+
+Para a distância até a estação (`transit_distance_min`), que possui valores iguais a zero, usamos `log1p` e `Yeo-Johnson`.
+
+```{python}
+
+transit = imoveis_true.transit_distance_min
+
+pt = PowerTransformer(method="yeo-johnson", standardize=False)
+
+transit_yj = (
+    pt.fit_transform(imoveis_true[['transit_distance_min']]).ravel()
+)
+
+transformed = {
+    "Original": transit,
+    "log1p": np.log1p(transit),
+    f"Yeo-jonhson (λ={pt.lambdas_[0]:.2f})": transit_yj,
+}
+
+```
+
+Comparamos a distribuição original da distância com as versões transformadas por `log1p` e `Yeo-Johnson`.
+
+```{python}
+
+fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(14, 4), sharey=True)
+
+for ax, (label, values) in zip (axes, transformed.items()):
+    sns.histplot(values, ax=ax, color="blue")
+    ax.set(
+        title=f"{label}\nassimetria = {stats.skew(values):.2f}",
+        xlabel="Escala",
+        ylabel="Imóveis",
+    )
+
+plt.tight_layout()
+plt.show()
+
+```
+
+## 6. Aplicação na base completa
+
+Observamos a distribuição das colunas `hoa` e `parking_spaces` antes de realizar o tratamento final.
+
+```{python}
+
+fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(10, 4))
+
+sns.histplot(
+    imoveis_true["hoa"],
+    ax=axes[0],
+    color="blue"
+)
+
+axes[0].set(
+    title="Dist hoa"
+)
+
+
+sns.histplot(
+    imoveis_true["parking_spaces"],
+    ax=axes[1],
+    color="blue"
+)
+
+axes[1].set(
+    title="Dist parking spaces"
+)
+
+
+```
+
+Primeiro, criamos colunas indicadoras (`_missing`) para registrar quais linhas tinham valores ausentes antes de imputar.
+
+```{python}
+imoveis_processed = (
+    imoveis.assign(
+        hoa_missing=lambda x: x.hoa.isna(),
+        parking_spaces_missing=lambda x: x.parking_spaces.isna(),
+    )
+)
+
+```
+
+Em seguida, imputamos `hoa` e `parking_spaces` usando a mediana por grupo (`property_type` e `tier`), com a mediana global como reserva.
+
+```{python}
+
+groups = ["property_type", "tier"]
+
+
+imoveis_processed = (
+    imoveis_processed.assign(
+        hoa=lambda x: (
+            x.groupby(groups)
+            .hoa
+            .transform(lambda s: s.fillna(s.median()))
+            .fillna(imoveis.hoa.median())
+        ),
+        parking_spaces=lambda x: (
+            x.groupby(groups)
+            .parking_spaces
+            .transform(lambda s: s.fillna(s.median()))
+            .fillna(imoveis.parking_spaces.median())
+        ),
+    )
+)
+
+
+```
+
+Conferimos se não restaram valores nulos e quantos registros foram imputados em cada coluna.
+
+```{python}
+
+(
+    imoveis_processed
+    .agg(
+        {
+            "hoa": lambda s: s.isna().sum(),
+            "parking_spaces": lambda s: s.isna().sum(),
+            "hoa_missing": "sum",
+            "parking_spaces_missing": "sum",
+        }
+    )
+)
+
+```
+
+Aplicamos a transformação `log` nas variáveis estritamente positivas e `Yeo-Johnson` na distância até o transporte.
+
+```{python}
+# Log nas variáveis positivas e Yeo-Johnson na distância
+imoveis_processed = (
+    imoveis_processed
+    .assign(
+        area=lambda x: np.log(x.area),
+        rent_amount=lambda x: np.log(x.rent_amount),
+        property_tax=lambda x: np.log(x.property_tax),
+        total=lambda x: np.log(x.total),
+        transit_distance_min=lambda x: stats.yeojohnson(
+            x.transit_distance_min
+        )[0],
+    )
+)
+
+
+```
+
+Definimos as colunas e os rótulos para comparar as distribuições antes e depois do pré-processamento.
+
+```{python}
+
+columns = [
+    "area",
+    "rent_amount",
+    "property_tax",
+    "total",
+    "transit_distance_min",
+]
+
+labels = ["Área", "Aluguel", "IPTU", "Total", "Distância"]
+```
+
+Por fim, plotamos os histogramas comparando as variáveis originais (linha de cima) e transformadas (linha de baixo).
+
+```{python}
+
+fig, axes = plt.subplots(2, 5, figsize=(18, 7))
+
+for col, label, ax1, ax2 in zip(columns, labels, axes[0], axes[1]):
+
+    sns.histplot(imoveis[col], ax=ax1, color="blue")
+
+    ax1.set(
+        title=f"{label}: antes\nassimetria = {stats.skew(imoveis[col]):.2f}",
+        ylabel="Imóveis",
+    )
+    sns.histplot(imoveis_processed[col], ax=ax2, color="red")
+    ax2.set(
+        title=f"{label}: depois\nassimetria = {stats.skew(imoveis_processed[col]):.2f}",
+        ylabel="Imóveis",
+    )
+
+plt.tight_layout()
+plt.show()
+
+```
+
+
+# Para casa
+
+
+```{python}
+
+imoveis_missing.isna().mean().mul(100).round(2).to_frame(name="Ausentes (%)")
 
 ```
 
 
 
 ```{python}
+
+room_mean = imoveis_missing.rooms.mean()
+room_median = imoveis_missing.rooms.median()
+
+display(
+    pd.DataFrame({
+        "Média": room_mean,
+        "Mediana": room_median
+    }, index=["Quartos"]).T
+
+)
+
+```
+
+
+```{python}
+
+
+room_messing = imoveis_missing.rooms.isna()
+truth = imoveis_true.loc[room_messing, "rooms"]
+
+pd.Series({
+    "Média": (truth - room_mean).abs().mean(),
+    "Mediana": (truth - room_median).abs().mean()
+}).round(2).to_frame(name="MAE")
+
 
 ```
