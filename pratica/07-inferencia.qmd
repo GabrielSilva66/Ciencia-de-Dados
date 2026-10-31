@@ -1,0 +1,143 @@
+# Estatística Inferencial
+
+
+## Preparando os dados
+```{python}
+
+import pathlib as path
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+import scipy as stats
+
+sns.set_theme(style="whitegrid", palette="colorblind")
+
+``` 
+
+```{python}
+mtcars = pd.read_csv("../aulas/mtcars/data/mtcars.csv").assign(
+  transmission= lambda df: np.where(df.am == 1, 'manual', 'automatico')
+)
+
+mtcars.head()
+```
+
+## Analisar diferença
+
+```{python}
+
+(
+  mtcars.groupby('transmission').mpg.agg(
+    ['size', 'mean', 'median', 'std']
+  ).round(2)
+)
+
+```
+
+Informações importantes trago pela tabela: 
+- Os grupos têm tamanhos diferentes. São 19 automáticos e 13 manuais. Nenhum dos dois é grande, e cada carro tem peso considerável na média do seu grupo.
+- Média e mediana contam histórias um pouco diferentes. Nos automáticos, as duas quase coincidem (17,15 e 17,3). Nos manuais, a média (24,39) fica acima da mediana (22,8), sinal de que alguns carros muito econômicos puxam a média para cima.
+- Os manuais variam mais. O desvio-padrão dos manuais (6,17) é cerca de 60% maior que o dos automáticos (3,83).
+
+```{python}
+
+manual = mtcars.loc[mtcars.transmission == 'manual', 'mpg']
+automatic = mtcars.loc[mtcars.transmission == 'automatico', 'mpg']
+
+delta_obs = round(manual.mean() - automatic.mean(), 2)
+
+delta_obs
+
+```
+
+os carros manuais fazem cerca de 7,24 milhas por galão a mais
+
+```{python}
+
+fig, ax = plt.subplots(figsize=(6, 4.5))
+
+sns.boxplot(
+  data=mtcars,
+  x = 'transmission', 
+  y ='mpg', 
+  order=['automatico', 'manual'],
+  ax=ax
+)
+sns.stripplot(
+  data=mtcars, 
+  x='transmission', 
+  y='mpg', 
+  order=['automatico', 'manual'], 
+)
+
+for mean in [automatic.mean(), manual.mean()]:
+  ax.axhline(mean, color='orange',linestyle="--")
+
+ax.set_title(f"delta_obs = {delta_obs:.2f} mpg")
+ax.set_ylabel('Comsumo mpg')
+
+```
+
+## Formulando hipóteses
+
+- H0 -> O câmbio não afeta o consumo (manual == automático)
+- H1 -> O câmbio afera o consumo (manual != automático)
+
+Sob H0, o câmbio não afeta o consumo, e os 32 valores de mpg vêm de uma única distribuição. Qualquer divisão em 13 manuais e 19 automáticos seria tão plausível quanto a real. Há cerca de 347 milhões dessas divisões, e novamente sorteamos 10.000 delas.
+
+```{python}
+
+def permutation_null(values, labels, n_perm=10_000, seed=2026):
+  rng = np.random.default_rng(seed)
+  null = []
+  for _ in range(n_perm):
+    shuffled = rng.permutation(labels)
+    null.append(values[shuffled].mean() - values[~shuffled].mean())
+  return np.array(null)
+
+
+
+mpg_values = mtcars.mpg.to_numpy()
+mpg_labels = (mtcars.transmission == 'manual').to_numpy()
+
+mpg_null = permutation_null(mpg_values, mpg_labels)
+mgp_p = np.mean(np.abs(mpg_null) >= delta_obs)
+
+mgp_p
+
+```
+
+
+```{python}
+
+fig, ax = plt.subplots(figsize=(9, 4))
+
+sns.histplot(
+  data=mpg_null,
+  bins=50,
+  ax=ax
+)
+
+for value in [delta_obs, -delta_obs]:
+  ax.axvline(value, color='orange', linewidth=2)
+
+
+ax.set_title('Câmbio: onde cai o delta_obs na distribuição ao acaso?')
+ax.set_ylabel('Permutações')
+
+```
+
+
+A distribuição nula tem a mesma forma de sino centrada em zero, agora na escala de milhas por galão. A maior parte das diferenças produzidas pelo acaso fica entre -4 e 4 mpg. As linhas do efeito observado ficam nas extremidades, fora da região ocupada pelas permutações. Apenas uma em 10.000 chegou a uma diferença de 7,24 mpg. Como  p < 0,05, rejeitamos H0: uma diferença desse tamanho seria muito rara se o câmbio não importasse.
+
+```{python}
+
+
+```
+
+
+```{python}
+
+
+```
