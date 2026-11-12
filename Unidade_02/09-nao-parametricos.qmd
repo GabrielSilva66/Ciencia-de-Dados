@@ -1,0 +1,118 @@
+# Aula 9 - Testes Não Paramétricos
+
+
+
+```{python}
+# Importa as bibliotecas e define o tema dos gráficos
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from matplotlib.colors import ListedColormap
+from scipy import stats
+
+sns.set_theme(style="whitegrid", palette="colorblind")
+
+```
+
+
+
+```{python}
+# Resume o resultado de um teste em uma linha legível
+def report(name, result, stat="estatística"):
+    parts = [f"{stat} = {result.statistic:.3f}"]
+    if hasattr(result, "df"):
+        parts.append(f"gl = {result.df:.4g}")
+    p = result.pvalue
+    parts.append("p < 0.001" if p < 0.001 else f"p = {p:.3f}")
+    print(f"{name}: " + " · ".join(parts))
+
+```
+
+
+```{python}
+# Tempos de internação dos dois tratamentos, em dias
+days_a = [1, 2, 2, 3, 3, 4, 5, 120]
+days_b = [4, 5, 5, 6, 6, 7, 8, 9]
+
+uti = pd.DataFrame(
+    {
+        "tratamento": ["A"] * len(days_a) + ["B"] * len(days_b),
+        "dias": days_a + days_b,
+    }
+)
+
+uti
+
+
+```
+
+
+```{python}
+
+```
+
+
+```{python}
+
+```
+
+
+```{python}
+
+```
+
+
+```{python}
+
+```
+
+
+```{python}
+
+```
+
+
+```{python}
+
+```
+
+
+```{python}
+
+```
+
+
+```{python}
+
+```
+
+
+```{python}
+
+```
+
+
+```{python}
+
+```
+
+
+```{python}
+
+```
+
+
+```{python}
+
+```
+
+
+```{python}
+
+```
+
+
+```{python}
+
+```

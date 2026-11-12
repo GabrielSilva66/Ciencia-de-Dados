@@ -31,13 +31,13 @@ Cada problema pede uma decisão diferente. A **imputação** estima valores que 
 
 Ao final deste roteiro, você será capaz de:
 
-1.  Distinguir ausência estrutural de ausência por falha de registro.
-2.  Imputar valores pela média, mediana, moda e mediana por grupo, além de medir o erro de cada estratégia.
-3.  Escalonar variáveis com `StandardScaler`, `RobustScaler` e `MinMaxScaler`, reconhecendo a sensibilidade de cada um a extremos.
-4.  Reduzir a assimetria com `log`, `log1p`, Box-Cox e Yeo-Johnson.
-5.  Explicar a diferença entre mudar a **régua** (escalonar) e mudar a **forma** (transformar) de uma distribuição.
+1. Distinguir ausência estrutural de ausência por falha de registro.
+2. Imputar valores pela média, mediana, moda e mediana por grupo, além de medir o erro de cada estratégia.
+3. Escalonar variáveis com `StandardScaler`, `RobustScaler` e `MinMaxScaler`, reconhecendo a sensibilidade de cada um a extremos.
+4. Reduzir a assimetria com `log`, `log1p`, Box-Cox e Yeo-Johnson.
+5. Explicar a diferença entre mudar a **régua** (escalonar) e mudar a **forma** (transformar) de uma distribuição.
 
-::: callout-tip
+::: {.callout-tip}
 ## Como usar este roteiro
 
 O roteiro usa a base `imoveis_sao_paulo.csv`, a mesma da atividade prática, salva em `imoveis-sao-paulo/data/`.
@@ -110,17 +110,17 @@ imoveis = (
 
 ```
 
-1.  `np.where` escolhe o rótulo linha a linha: imóveis sem andar são casas, e os demais, apartamentos.
+1. `np.where` escolhe o rótulo linha a linha: imóveis sem andar são casas, e os demais, apartamentos.
 
 ## 1.1 Os três problemas da aula
 
 Antes de tratar qualquer coluna, precisamos saber o que há de errado com ela. Esta seção faz um diagnóstico rápido da base, no espírito da Aula 5, e o resume em uma única figura com três painéis. Cada painel responde a uma pergunta e antecipa um dos problemas que a aula vai tratar.
 
 | Painel | Pergunta | O que observar |
-|------------------------|------------------------|------------------------|
-| 1\. Valores ausentes | Quais colunas têm lacunas, e em que proporção? | Se as proporções são parecidas ou se alguma coluna destoa das demais |
-| 2\. Escalas incompatíveis | As variáveis numéricas estão na mesma ordem de grandeza? | A distância entre as medianas de quartos, área e aluguel |
-| 3\. Cauda longa | Como os aluguéis se distribuem? | Onde se concentra a maioria dos imóveis e até onde a cauda se estende |
+|---|---|---|
+| 1. Valores ausentes | Quais colunas têm lacunas, e em que proporção? | Se as proporções são parecidas ou se alguma coluna destoa das demais |
+| 2. Escalas incompatíveis | As variáveis numéricas estão na mesma ordem de grandeza? | A distância entre as medianas de quartos, área e aluguel |
+| 3. Cauda longa | Como os aluguéis se distribuem? | Onde se concentra a maioria dos imóveis e até onde a cauda se estende |
 
 Para montar a figura, calculamos antes três objetos:
 
@@ -147,8 +147,8 @@ limit = imoveis["rent_amount"].quantile(.99)  # <2>
 
 ```
 
-1.  A média de uma coluna booleana é a proporção de valores `True`, aqui a proporção de ausentes.
-2.  O percentil 99 recorta o 1% mais extremo apenas na visualização. Nenhum dado é removido.
+1. A média de uma coluna booleana é a proporção de valores `True`, aqui a proporção de ausentes.
+2. O percentil 99 recorta o 1% mais extremo apenas na visualização. Nenhum dado é removido.
 
 ```{python}
 
@@ -200,9 +200,9 @@ plt.show()
 
 A leitura da figura revela os três problemas:
 
-1.  **Valores ausentes.** `hoa` e `parking_spaces` têm poucas lacunas (cerca de 2% e 1%), enquanto `floor` chega a 15%. Uma diferença tão grande sugere que a ausência em `floor` tem uma causa própria, investigada na seção 2.
-2.  **Escalas incompatíveis.** O imóvel típico tem 2 quartos, cerca de 76 m² e aluguel de R\$ 2.900. As três medianas estão separadas por ordens de grandeza, e o aluguel domina o painel apenas por causa da unidade.
-3.  **Cauda longa.** Três quartos dos aluguéis ficam abaixo de cerca de R\$ 5.100, mas a cauda se estende muito à direita. O maior aluguel chega a quase R\$ 38 mil, bem além do recorte do gráfico. A média (cerca de R\$ 4.000) fica acima da mediana, o mesmo padrão de assimetria positiva visto na Aula 5.
+1. **Valores ausentes.** `hoa` e `parking_spaces` têm poucas lacunas (cerca de 2% e 1%), enquanto `floor` chega a 15%. Uma diferença tão grande sugere que a ausência em `floor` tem uma causa própria, investigada na seção 2.
+2. **Escalas incompatíveis.** O imóvel típico tem 2 quartos, cerca de 76 m² e aluguel de R$ 2.900. As três medianas estão separadas por ordens de grandeza, e o aluguel domina o painel apenas por causa da unidade.
+3. **Cauda longa.** Três quartos dos aluguéis ficam abaixo de cerca de R$ 5.100, mas a cauda se estende muito à direita. O maior aluguel chega a quase R$ 38 mil, bem além do recorte do gráfico. A média (cerca de R$ 4.000) fica acima da mediana, o mesmo padrão de assimetria positiva visto na Aula 5.
 
 A ordem das seções acompanha uma sequência comum de pré-processamento. Primeiro, investigamos as lacunas e decidimos quais delas representam informação perdida. Muitos estimadores não aceitam valores ausentes em sua entrada, mas esse não é o único motivo para tratá-los. Também precisamos evitar que procedimentos diferentes descartem subconjuntos distintos da base. Depois, examinamos separadamente a escala numérica e a forma das distribuições.
 
@@ -233,7 +233,7 @@ Na base de imóveis, `floor` e `total_floors` estão ausentes nas casas. Não ho
 
 ```
 
-::: callout-important
+::: {.callout-important}
 Quando a ausência decorre de uma característica conhecida da observação, registre essa característica e **não impute** um valor numérico. Aqui, `property_type` torna explícita a informação que antes estava codificada apenas pela lacuna.
 :::
 
@@ -247,9 +247,9 @@ Há uma dificuldade prática. Em uma lacuna real, o valor verdadeiro não foi ob
 
 A saída é simular o problema:
 
-1.  partir de registros completos,
-2.  apagar alguns valores conhecidos,
-3.  imputar e comparar com o valor original.
+1. partir de registros completos,
+2. apagar alguns valores conhecidos,
+3. imputar e comparar com o valor original.
 
 Primeiro, a função que apaga uma fração dos valores e a base completa, que servirá de gabarito.
 
@@ -269,9 +269,9 @@ imoveis_true = (  # <3>
 
 ```
 
-1.  A semente fixa garante o mesmo apagamento a cada execução.
-2.  `rng.random` sorteia um número em \[0, 1) para cada linha. `.mask` troca por `NaN` os valores cujo sorteio fica abaixo de `share`.
-3.  O gabarito mantém apenas registros com `hoa` e `parking_spaces` conhecidos.
+1. A semente fixa garante o mesmo apagamento a cada execução.
+2. `rng.random` sorteia um número em [0, 1) para cada linha. `.mask` troca por `NaN` os valores cujo sorteio fica abaixo de `share`.
+3. O gabarito mantém apenas registros com `hoa` e `parking_spaces` conhecidos.
 
 Em seguida, criamos lacunas em três variáveis de tipos diferentes: discreta, contínua e categórica.
 
@@ -289,7 +289,7 @@ imoveis_missing = (
 
 ```
 
-1.  As proporções apagadas são 10% dos quartos, 15% dos aluguéis e 8% da mobília.
+1. As proporções apagadas são 10% dos quartos, 15% dos aluguéis e 8% da mobília.
 
 Conferimos quantos valores foram apagados:
 
@@ -352,8 +352,8 @@ rent_group = (
 
 ```
 
-1.  `.transform` devolve uma série do mesmo tamanho da original, alinhada ao seu índice.
-2.  Grupos sem observações recebem a mediana global.
+1. `.transform` devolve uma série do mesmo tamanho da original, alinhada ao seu índice.
+2. Grupos sem observações recebem a mediana global.
 
 Reunimos as versões do aluguel para compará-las lado a lado:
 
@@ -408,7 +408,7 @@ plt.show()
 
 ```
 
-1.  Nos painéis da média e da mediana, a linha tracejada marca a constante usada para preencher as lacunas.
+1. Nos painéis da média e da mediana, a linha tracejada marca a constante usada para preencher as lacunas.
 
 Dois efeitos aparecem nos histogramas:
 
@@ -425,17 +425,17 @@ $$
 \text{MAE} = \frac{1}{n}\sum_{i=1}^{n} \left| y_i - \hat{y}_i \right|
 $$
 
-Aqui, $n$ é o número de lacunas imputadas. O MAE é expresso na mesma unidade da variável, o que facilita a interpretação: um MAE de R\$ 500 significa que, em média, a imputação errou o aluguel em R\$ 500, para mais ou para menos.
+Aqui, $n$ é o número de lacunas imputadas. O MAE é expresso na mesma unidade da variável, o que facilita a interpretação: um MAE de R$ 500 significa que, em média, a imputação errou o aluguel em R$ 500, para mais ou para menos.
 
-Um exemplo pequeno ajuda a fixar o cálculo. Suponha três imóveis cujo aluguel foi apagado e imputado com a mesma constante, R\$ 3.000:
+Um exemplo pequeno ajuda a fixar o cálculo. Suponha três imóveis cujo aluguel foi apagado e imputado com a mesma constante, R$ 3.000:
 
 | Imóvel | Verdadeiro ($y_i$) | Imputado ($\hat{y}_i$) | Erro absoluto |
-|--------|--------------------|------------------------|---------------|
-| A      | R\$ 2.000          | R\$ 3.000              | R\$ 1.000     |
-| B      | R\$ 3.000          | R\$ 3.000              | R\$ 0         |
-| C      | R\$ 10.000         | R\$ 3.000              | R\$ 7.000     |
+|---|---|---|---|
+| A | R$ 2.000 | R$ 3.000 | R$ 1.000 |
+| B | R$ 3.000 | R$ 3.000 | R$ 0 |
+| C | R$ 10.000 | R$ 3.000 | R$ 7.000 |
 
-O MAE é $(1.000 + 0 + 7.000)/3 \approx$ R\$ 2.666,67. Observe que um único imóvel caro responde pela maior parte do erro.
+O MAE é $(1.000 + 0 + 7.000)/3 \approx$ R$ 2.666,67. Observe que um único imóvel caro responde pela maior parte do erro.
 
 Dois cuidados orientam o cálculo nesta seção:
 
@@ -506,7 +506,7 @@ furniture_mode
 
 ```
 
-1.  `.mode()` devolve uma série, pois pode haver empate. `.iloc[0]` seleciona o primeiro valor.
+1. `.mode()` devolve uma série, pois pode haver empate. `.iloc[0]` seleciona o primeiro valor.
 
 Depois da imputação, todas as lacunas passam a contar como ocorrências dessa categoria. A frequência da moda aumenta artificialmente, um efeito que precisa ser considerado ao interpretar a distribuição resultante.
 
@@ -530,7 +530,7 @@ Depois da imputação, todas as lacunas passam a contar como ocorrências dessa 
 
 ```
 
-1.  `dropna=False` inclui os valores `NaN` na contagem.
+1. `dropna=False` inclui os valores `NaN` na contagem.
 
 Em uma variável quantitativa discreta, como o número de quartos, a média é matematicamente definida, mas pode produzir um valor incompatível com o domínio da variável, como uma quantidade fracionária de quartos:
 
@@ -557,14 +557,14 @@ Em uma variável quantitativa discreta, como o número de quartos, a média é m
 
 ## 3.3 Resumo da imputação
 
-| Situação                      | Escolha inicial       |
-|-------------------------------|-----------------------|
-| Contínua e simétrica          | Média                 |
-| Assimétrica ou com extremos   | Mediana               |
-| Categórica ou discreta        | Moda ou mediana       |
+| Situação | Escolha inicial |
+|---|---|
+| Contínua e simétrica | Média |
+| Assimétrica ou com extremos | Mediana |
+| Categórica ou discreta | Moda ou mediana |
 | Varia entre grupos conhecidos | Estatística por grupo |
 
-::: callout-important
+::: {.callout-important}
 Antes de imputar, crie uma **coluna indicadora** para distinguir valores observados de estimados.
 :::
 
@@ -582,14 +582,14 @@ O termo **normalização** não tem uso inteiramente uniforme na literatura e na
 
 O objetivo do escalonamento é colocar variáveis numéricas em escalas comparáveis. Algoritmos que calculam distâncias, como k-vizinhos mais próximos e k-médias, são diretamente sensíveis às magnitudes dos atributos. Métodos ajustados por gradiente e modelos com regularização também podem ser afetados. Sem escalonamento, uma variável de maior ordem de grandeza pode dominar o cálculo apenas por causa de sua unidade. A padronização por z-score e o escalonamento Min-Max são duas alternativas conhecidas. O scikit-learn ainda reserva o nome `Normalizer` para a normalização de cada amostra por sua norma vetorial, uma operação diferente das três estudadas aqui. Por isso, convém verificar a definição exata da técnica em vez de confiar apenas no termo empregado.
 
-Na base de imóveis, área em m², aluguel em reais e número de quartos têm ordens de grandeza muito diferentes. Uma diferença de um quarto pode distinguir substancialmente dois imóveis. Uma diferença de R\$ 1 no aluguel costuma ser desprezível. O escalonamento permite que essas diferenças sejam comparadas em unidades relativas à distribuição de cada atributo.
+Na base de imóveis, área em m², aluguel em reais e número de quartos têm ordens de grandeza muito diferentes. Uma diferença de um quarto pode distinguir substancialmente dois imóveis. Uma diferença de R$ 1 no aluguel costuma ser desprezível. O escalonamento permite que essas diferenças sejam comparadas em unidades relativas à distribuição de cada atributo.
 
 ## 4.1 Três escaladores
 
 Os três escaladores diferem na escolha do centro e da escala, e essa escolha determina a sensibilidade a valores extremos.
 
 | Técnica | Centro e escala | Sensibilidade a extremos | Indicação |
-|------------------|------------------|------------------|------------------|
+|---|---|---|---|
 | `StandardScaler` | Média e desvio-padrão | Alta | Sem extremos importantes |
 | `RobustScaler` | Mediana e IQR | Baixa | Com valores extremos |
 | `MinMaxScaler` | Mínimo e máximo | Muito alta | Limites estáveis |
@@ -624,8 +624,8 @@ scaled = {
 
 ```
 
-1.  Os colchetes duplos mantêm uma tabela (2D), formato que o scikit-learn espera.
-2.  `.fit_transform` estima os parâmetros do escalador (média, IQR ou mínimo e máximo) e já os aplica aos dados.
+1. Os colchetes duplos mantêm uma tabela (2D), formato que o scikit-learn espera.
+2. `.fit_transform` estima os parâmetros do escalador (média, IQR ou mínimo e máximo) e já os aplica aos dados.
 
 Observe o eixo horizontal e a assimetria de cada painel:
 
@@ -653,7 +653,7 @@ Os quatro histogramas têm a mesma forma e a mesma assimetria. Apenas os valores
 
 O Min-Max usa o mínimo e o máximo observados como referências. Um único aluguel extremo aumenta a amplitude usada no denominador e comprime os demais valores em uma faixa estreita próxima de zero.
 
-Para ver o efeito, acrescentamos um aluguel fictício de R\$ 500 mil e o descartamos depois do ajuste:
+Para ver o efeito, acrescentamos um aluguel fictício de R$ 500 mil e o descartamos depois do ajuste:
 
 ```{python}
 
@@ -671,7 +671,7 @@ minmax_extreme = (
 
 ```
 
-1.  `[:-1]` descarta o último valor do vetor, o aluguel fictício.
+1. `[:-1]` descarta o último valor do vetor, o aluguel fictício.
 
 ```{python}
 
@@ -703,7 +703,7 @@ plt.show()
 
 Com o extremo, quase todos os imóveis ficam concentrados no início da escala. O `RobustScaler`, baseado na mediana e no IQR, é muito menos sensível a esse efeito. O ponto extremo ainda permanece distante depois da transformação, mas não determina o centro nem a escala usados para representar a maioria das observações.
 
-::: callout-important
+::: {.callout-important}
 **Escalonar muda a régua, não a forma.**
 :::
 
@@ -715,7 +715,7 @@ Esta seção trata do segundo sentido em que o termo **normalização** aparece 
 
 Nesta seção, usamos **transformação da distribuição** para designar a aplicação de uma função não linear, como $\log(x)$ ou uma transformação de potência. O objetivo pode ser reduzir a assimetria, estabilizar a variância ou tornar uma relação multiplicativa mais próxima de uma relação linear. Aproximar a variável de uma distribuição normal é uma finalidade possível, mas não constitui uma exigência geral do pré-processamento.
 
-Ao contrário do escalonamento afim, uma função não linear comprime regiões diferentes do eixo em intensidades diferentes. O logaritmo reduz mais as distâncias entre valores altos do que entre valores baixos. Na escala logarítmica, a distância entre R\$ 1.000 e R\$ 2.000 é igual à distância entre R\$ 10.000 e R\$ 20.000, pois os dois pares representam a mesma razão. A ordenação é preservada, mas as diferenças absolutas e as razões entre distâncias mudam. Com isso, também podem mudar a assimetria, a curtose e a influência de observações extremas.
+Ao contrário do escalonamento afim, uma função não linear comprime regiões diferentes do eixo em intensidades diferentes. O logaritmo reduz mais as distâncias entre valores altos do que entre valores baixos. Na escala logarítmica, a distância entre R$ 1.000 e R$ 2.000 é igual à distância entre R$ 10.000 e R$ 20.000, pois os dois pares representam a mesma razão. A ordenação é preservada, mas as diferenças absolutas e as razões entre distâncias mudam. Com isso, também podem mudar a assimetria, a curtose e a influência de observações extremas.
 
 Esse tipo de transformação é útil quando a escala original produz forte heterogeneidade de variância, quando relações multiplicativas descrevem melhor o fenômeno ou quando uma cauda longa exerce influência excessiva sobre o ajuste. O custo aparece na interpretação. Um coeficiente ou uma média calculados na escala transformada já não estão expressos diretamente em reais. Transformações como Box-Cox e Yeo-Johnson ampliam as possibilidades do logaritmo ao estimar, a partir dos dados, um parâmetro de potência associado à aproximação da normalidade.
 
@@ -742,7 +742,7 @@ rent_transformed = {
 
 ```
 
-1.  `stats.boxcox` devolve uma tupla com os valores transformados e o λ estimado.
+1. `stats.boxcox` devolve uma tupla com os valores transformados e o λ estimado.
 
 ```{python}
 
@@ -795,8 +795,8 @@ transformed = {
 
 ```
 
-1.  `np.log1p` calcula $\log(1 + x)$, que é definido em zero.
-2.  `pt.lambdas_` guarda um λ para cada coluna ajustada. Aqui há apenas uma.
+1. `np.log1p` calcula $\log(1 + x)$, que é definido em zero.
+2. `pt.lambdas_` guarda um λ para cada coluna ajustada. Aqui há apenas uma.
 
 ```{python}
 
@@ -823,12 +823,12 @@ Compare as assimetrias:
 
 ## 5.3 Resumo das transformações
 
-| Técnica     | Valores aceitos  | Interpretação                      |
-|-------------|------------------|------------------------------------|
-| `log`       | Positivos        | Boa: diferenças representam razões |
-| `log1p`     | Zero e positivos | Boa, com inversa `expm1`           |
-| Box-Cox     | Positivos        | Menos direta                       |
-| Yeo-Johnson | Qualquer sinal   | Menos direta                       |
+| Técnica | Valores aceitos | Interpretação |
+|---|---|---|
+| `log` | Positivos | Boa: diferenças representam razões |
+| `log1p` | Zero e positivos | Boa, com inversa `expm1` |
+| Box-Cox | Positivos | Menos direta |
+| Yeo-Johnson | Qualquer sinal | Menos direta |
 
 ::: {.callout-note collapse="true"}
 ## Fórmula e interpretação
@@ -849,7 +849,7 @@ Para voltar à unidade original:
 - após `log1p`, use `np.expm1`.
 :::
 
-::: callout-important
+::: {.callout-important}
 **Transformar muda a forma.** A redução da assimetria deve ser avaliada junto com a perda de interpretação direta na unidade original.
 :::
 
@@ -909,7 +909,7 @@ imoveis_processed = (
 
 ```
 
-1.  Grupos sem observações recebem a mediana global como segunda opção.
+1. Grupos sem observações recebem a mediana global como segunda opção.
 
 Conferimos que não restaram lacunas e quantos valores foram estimados:
 
@@ -930,8 +930,8 @@ Conferimos que não restaram lacunas e quantos valores foram estimados:
 
 ```
 
-1.  Lacunas que restaram em cada coluna. O esperado é zero.
-2.  Valores estimados, contados pelas colunas indicadoras.
+1. Lacunas que restaram em cada coluna. O esperado é zero.
+2. Valores estimados, contados pelas colunas indicadoras.
 
 ## 6.3 Reduzir as caudas
 
@@ -958,7 +958,7 @@ imoveis_processed = (
 
 ```
 
-1.  `stats.yeojohnson` devolve os valores transformados e o λ estimado. `[0]` seleciona os valores.
+1. `stats.yeojohnson` devolve os valores transformados e o λ estimado. `[0]` seleciona os valores.
 
 ## 6.4 Antes e depois
 
@@ -1049,26 +1049,26 @@ after = ProfileReport(
 
 A tabela reúne as decisões discutidas no roteiro. Ela oferece critérios iniciais, não regras automáticas. A escolha final depende do mecanismo de ausência, da distribuição observada, do modelo empregado e do objetivo da análise.
 
-| Problema                         | Técnica                |
-|----------------------------------|------------------------|
-| Ausência estrutural              | Não imputar, registrar |
-| Contínua simétrica               | Média                  |
-| Assimétrica ou com extremos      | Mediana                |
-| Categórica ou discreta           | Moda ou mediana        |
-| Varia entre grupos               | Mediana por grupo      |
-| Escalas diferentes, sem extremos | Z-score                |
-| Escalas diferentes, com extremos | RobustScaler           |
-| Limites estáveis                 | Min-Max                |
-| Cauda positiva                   | Log ou Box-Cox         |
-| Cauda com zeros                  | log1p ou Yeo-Johnson   |
+| Problema | Técnica |
+|---|---|
+| Ausência estrutural | Não imputar, registrar |
+| Contínua simétrica | Média |
+| Assimétrica ou com extremos | Mediana |
+| Categórica ou discreta | Moda ou mediana |
+| Varia entre grupos | Mediana por grupo |
+| Escalas diferentes, sem extremos | Z-score |
+| Escalas diferentes, com extremos | RobustScaler |
+| Limites estáveis | Min-Max |
+| Cauda positiva | Log ou Box-Cox |
+| Cauda com zeros | log1p ou Yeo-Johnson |
 
 ## Síntese
 
 Três classes de tratamento foram aplicadas à base de imóveis:
 
-1.  **Imputação.** Nem toda ausência corresponde a um valor que deveria existir. Quando a imputação for apropriada, a estratégia deve considerar o tipo da variável, sua distribuição e as informações disponíveis em outros atributos. Uma coluna indicadora preserva o registro das posições estimadas.
-2.  **Escalonamento.** Uma transformação afim altera a origem e a unidade da variável sem modificar a forma de sua distribuição. A presença de valores extremos influencia a escolha entre parâmetros convencionais, como média e desvio-padrão, e parâmetros robustos, como mediana e IQR.
-3.  **Transformação.** Uma função não linear modifica as distâncias entre observações e pode reduzir a assimetria. Essa mudança pode favorecer a modelagem, mas exige cuidado ao interpretar e comunicar resultados na escala original.
+1. **Imputação.** Nem toda ausência corresponde a um valor que deveria existir. Quando a imputação for apropriada, a estratégia deve considerar o tipo da variável, sua distribuição e as informações disponíveis em outros atributos. Uma coluna indicadora preserva o registro das posições estimadas.
+2. **Escalonamento.** Uma transformação afim altera a origem e a unidade da variável sem modificar a forma de sua distribuição. A presença de valores extremos influencia a escolha entre parâmetros convencionais, como média e desvio-padrão, e parâmetros robustos, como mediana e IQR.
+3. **Transformação.** Uma função não linear modifica as distâncias entre observações e pode reduzir a assimetria. Essa mudança pode favorecer a modelagem, mas exige cuidado ao interpretar e comunicar resultados na escala original.
 
 # Perguntas para consolidar
 
@@ -1110,9 +1110,9 @@ Para comunicação, a unidade original em reais costuma ser mais direta. Uma pos
 
 # Para casa
 
-1.  Compare o MAE da média e da mediana para `rooms` e relacione o resultado à assimetria e ao caráter discreto da variável.
-2.  Impute o aluguel por `tier` e `zona`. Depois, use o bairro como grupo e discuta o efeito de grupos pequenos.
-3.  Entre apartamentos, compare `log1p`, Box-Cox e Yeo-Johnson para `hoa`. Qual produz menor assimetria? Qual você apresentaria a um gestor?
-4.  Antes de considerar o notebook pronto, use Restart Kernel and Run All.
+1. Compare o MAE da média e da mediana para `rooms` e relacione o resultado à assimetria e ao caráter discreto da variável.
+2. Impute o aluguel por `tier` e `zona`. Depois, use o bairro como grupo e discuta o efeito de grupos pequenos.
+3. Entre apartamentos, compare `log1p`, Box-Cox e Yeo-Johnson para `hoa`. Qual produz menor assimetria? Qual você apresentaria a um gestor?
+4. Antes de considerar o notebook pronto, use Restart Kernel and Run All.
 
 > Escalonar muda a régua. Transformar muda a forma. Imputar muda os dados e deve deixar rastro.

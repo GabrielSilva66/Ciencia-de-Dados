@@ -1,0 +1,297 @@
+# Estatística Inferencial
+
+
+## Preparando os dados
+
+Carregamos o dataset `mtcars` e criamos a coluna `transmission` para identificar carros com transmissão manual (`am = 1`) ou automática (`am = 0`):
+
+```{python}
+# Bibliotecas para manipulação, estatística e visualização
+import pathlib as path
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+import scipy.stats as stats
+
+# Configuração visual dos gráficos
+sns.set_theme(style="whitegrid", palette="colorblind")
+
+``` 
+
+```{python}
+# Leitura dos dados e rotulagem da transmissão (am: 1 = manual, 0 = automático)
+mtcars = pd.read_csv("../aulas/mtcars/data/mtcars.csv").assign(
+  transmission= lambda df: np.where(df.am == 1, 'manual', 'automatico')
+)
+
+mtcars.head()
+```
+
+## Analisar diferença
+
+Comparamos o consumo em milhas por galão (`mpg`) entre os dois grupos:
+
+```{python}
+# Resumo estatístico do consumo (mpg) por tipo de câmbio
+(
+  mtcars.groupby('transmission').mpg.agg(
+    ['size', 'mean', 'median', 'std']
+  ).round(2)
+)
+
+```
+
+Informações importantes trazidas pela tabela: 
+- Os grupos têm tamanhos diferentes. São 19 automáticos e 13 manuais. Nenhum dos dois é grande, e cada carro tem peso considerável na média do seu grupo.
+- Média e mediana contam histórias um pouco diferentes. Nos automáticos, as duas quase coincidem (17,15 e 17,3). Nos manuais, a média (24,39) fica acima da mediana (22,8), sinal de que alguns carros muito econômicos puxam a média para cima.
+- Os manuais variam mais. O desvio-padrão dos manuais (6,17) é cerca de 60% maior que o dos automáticos (3,83).
+
+Calculamos a diferença observada entre as médias dos dois grupos ($\Delta_{obs} = \bar{x}_{manual} - \bar{x}_{auto}$):
+
+```{python}
+# Separação das séries de consumo por grupo
+manual = mtcars.loc[mtcars.transmission == 'manual', 'mpg']
+automatic = mtcars.loc[mtcars.transmission == 'automatico', 'mpg']
+
+# Efeito observado na amostra: diferença entre as médias
+delta_obs = round(manual.mean() - automatic.mean(), 2)
+
+delta_obs
+
+```
+
+Os carros manuais fazem cerca de 7,24 milhas por galão a mais. O gráfico abaixo combina boxplot e pontos individuais para inspecionar as distribuições e destacar as médias:
+
+```{python}
+
+fig, ax = plt.subplots(figsize=(6, 4.5))
+
+# Boxplot com dispersão individual (stripplot) dos pontos
+sns.boxplot(
+  data=mtcars,
+  x = 'transmission', 
+  y ='mpg', 
+  order=['automatico', 'manual'],
+  ax=ax
+)
+sns.stripplot(
+  data=mtcars, 
+  x='transmission', 
+  y='mpg', 
+  order=['automatico', 'manual'], 
+)
+
+# Médias de cada grupo representadas por linhas tracejadas
+for mean in [automatic.mean(), manual.mean()]:
+  ax.axhline(mean, color='orange',linestyle="--")
+
+ax.set_title(f"delta_obs = {delta_obs:.2f} mpg")
+ax.set_ylabel('Comsumo mpg')
+
+```
+
+O gráfico reforça o maior consumo e a assimetria à direita nos manuais. A pergunta central da inferência é: essa diferença de 7,24 mpg reflete um efeito real ou mero acaso amostral?
+
+## Formulando hipóteses
+
+- $H_0$ -> O câmbio não afeta o consumo ($\mu_{manual} = \mu_{automático}$)
+- $H_1$ -> O câmbio afeta o consumo ($\mu_{manual} \neq \mu_{automático}$)
+
+Sob $H_0$, o câmbio não afeta o consumo, e os 32 valores de mpg vêm de uma única distribuição. Qualquer divisão em 13 manuais e 19 automáticos seria tão plausível quanto a real. Há cerca de 347 milhões dessas divisões possíveis; simulamos 10.000 delas:
+
+```{python}
+# Simulação sob H0: reatribui rótulos aleatoriamente para avaliar o efeito do acaso
+def permutation_null(values, labels, n_perm=10_000, seed=2026):
+  rng = np.random.default_rng(seed)
+  null = []
+  for _ in range(n_perm):
+    shuffled = rng.permutation(labels)
+    # Diferença de médias com rótulos embaralhados
+    null.append(values[shuffled].mean() - values[~shuffled].mean())
+  return np.array(null)
+
+
+# Conversão para arrays e identificação booleana do grupo manual
+mpg_values = mtcars.mpg.to_numpy()
+mpg_labels = (mtcars.transmission == 'manual').to_numpy()
+
+# 10.000 permutações e cálculo do p-valor bilateral (|diff| >= delta_obs)
+mpg_null = permutation_null(mpg_values, mpg_labels)
+mgp_p = np.mean(np.abs(mpg_null) >= delta_obs)
+
+mgp_p
+
+```
+
+O $p$-valor estimado foi de apenas 0,0001 (0,01%). Visualizamos onde a diferença observada (7,24 mpg) cai na distribuição gerada pelo acaso:
+
+```{python}
+
+fig, ax = plt.subplots(figsize=(9, 4))
+
+# Distribuição empírica das diferenças esperadas apenas pelo acaso
+sns.histplot(
+  data=mpg_null,
+  bins=50,
+  ax=ax
+)
+
+# Linhas bilaterais do efeito observado (+delta_obs e -delta_obs)
+for value in [delta_obs, -delta_obs]:
+  ax.axvline(value, color='orange', linewidth=2)
+
+
+ax.set_title('Câmbio: onde cai o delta_obs na distribuição ao acaso?')
+ax.set_ylabel('Permutações')
+
+```
+
+
+A distribuição nula tem a mesma forma de sino centrada em zero, agora na escala de milhas por galão. A maior parte das diferenças produzidas pelo acaso fica entre -4 e 4 mpg. As linhas do efeito observado ficam nas extremidades, fora da região ocupada pelas permutações. Apenas uma em 10.000 chegou a uma diferença de 7,24 mpg. Como $p < 0,05$, rejeitamos $H_0$: uma diferença desse tamanho seria muito rara se o câmbio não importasse.
+
+
+## Erro-padrão
+
+O erro-padrão empírico ($SE$) corresponde ao desvio-padrão da distribuição gerada pelas permutações:
+
+```{python}
+# Erro-padrão empírico: desvio-padrão da distribuição nula simulada
+round(mpg_null.std(), 2)
+
+```
+
+Calculamos o erro-padrão teórico sob $H_0$ pela fórmula analítica com variância combinada (pooled):
+
+```{python}
+# Tamanhos amostrais de cada grupo
+n_manual = len(manual)
+n_automatic = len(automatic)
+
+# Erro-padrão teórico sob H0 (variância global dos 32 carros agrupados)
+se_null = mtcars.mpg.std() * np.sqrt(1 / n_manual + 1 / n_automatic)
+round(se_null, 2)
+
+```
+Os dois valores praticamente coincidem: 2,16 mpg pela simulação e 2,17 mpg pela fórmula. A curva normal teórica com essa largura descreve com precisão o histograma das permutações:
+
+
+```{python}
+fig, ax = plt.subplots(figsize=(8, 4))
+
+grid = np.linspace(-9, 9, 300)
+
+# Histograma das permutações normalizado em densidade
+sns.histplot(
+  data=mpg_null,
+  bins=40,
+  stat="density",
+  color='#A1C9F4',
+  label="10.000 permutações",
+  ax=ax
+)
+
+# Intervalo de +-1 erro-padrão em torno de zero (~68% da distribuição)
+for value in [se_null, -se_null]:
+    ax.axvline(value, color="orange", linestyle="--")
+
+# Curva normal teórica baseada no erro-padrão sob H0
+ax.plot(grid, stats.norm.pdf(grid, 0, se_null),
+        color="#1576bc", linewidth=2, label="curva prevista pela fórmula")
+
+ax.set(title="+-1 erro-padrão", xlabel="delta_perm: diferença de médias sob H₀ (mpg)",
+       ylabel="Densidade")
+ax.legend()
+
+```
+Essa largura recebe o nome de erro-padrão (SE, do inglês standard error). Ela funciona como a régua do acaso: as linhas tracejadas marcam um erro-padrão para cada lado de zero, e cerca de dois terços das permutações caem entre elas.
+
+## A estatística t
+
+A estatística $t$ mede quantas "réguas do acaso" ($SE$) cabem dentro da diferença observada ($t = \Delta_{obs} / SE$):
+
+```{python}
+# Estatística t sob H0: quantas "réguas do acaso" (SE) cabem em delta_obs
+t_stat = round(delta_obs / se_null, 2)
+t_stat
+
+```
+
+O valor $t = 3,34$ indica que a diferença observada está a mais de 3 erros-padrão de zero.
+
+Porém, como os dois grupos têm variâncias bem diferentes (3,83 vs. 6,17) e tamanhos amostrais distintos (19 vs. 13), o erro-padrão de **Welch** é mais adequado por não assumir variâncias homogêneas:
+
+```{python}
+# Erro-padrão de Welch (permite variâncias e tamanhos amostrais desiguais)
+se_welch = np.sqrt(manual.var() / n_manual + automatic.var() / n_automatic)
+
+# SE de Welch e estatística t correspondente
+round(se_welch, 2), round(delta_obs / se_welch, 2)
+```
+
+Com o $SE$ de Welch (1,92 mpg), a estatística sobe para $t = 3,76$. Confirmamos os valores exatos executando o teste $t$ de Welch via SciPy:
+
+```{python}
+# Teste t de Welch bicaudal via SciPy (equal_var=False)
+mpg_ttest = stats.ttest_ind(manual, automatic, equal_var=False)
+mpg_ttest
+```
+
+O teste confirma $t \approx 3,77$ e $p = 0,0014$, rejeitando formalmente $H_0$.
+
+### Sensibilidade a Outliers
+
+A média e o teste $t$ são sensíveis a valores extremos. Para ilustrar essa vulnerabilidade, simulamos um erro de digitação adicionando um único carro automático com consumo de 60 mpg:
+
+```{python}
+# Simulando um único erro de digitação (carro automático com 60 mpg)
+automatic_typo = pd.concat([automatic, pd.Series([60.0])], ignore_index=True)
+
+# Função para comparar a sensibilidade de médias vs. medianas diante do outlier
+def compare(group_a, group_b):
+    test = stats.ttest_ind(group_a, group_b, equal_var=False)
+    return {
+        "dif_medias": group_a.mean() - group_b.mean(),
+        "dif_medianas": group_a.median() - group_b.median(),
+        "dp_automaticos": group_b.std(),
+        "t": test.statistic,
+        "p": test.pvalue,
+    }
+
+# Demonstração: o outlier infla a variância e retira a significância do teste t
+pd.DataFrame({
+    "mtcars original": compare(manual, automatic),
+    "+1 automático com 60 mpg": compare(manual, automatic_typo),
+}).T.round(4)
+```
+
+O impacto do outlier é expressivo: o desvio-padrão dos automáticos salta de 3,83 para 10,28, derrubando a estatística $t$ para 1,78 e elevando o $p$-valor para 0,0848 (perdendo a significância a 5%).
+
+Por outro lado, a diferença de medianas quase não se alterou (passou de 5,50 para 5,25). Usamos então um teste de **permutação baseado em medianas** como alternativa não-paramétrica robusta:
+
+```{python}
+# Permutação de medianas: teste não-paramétrico robusto a outliers
+def permutation_null_median(values, labels, n_perm=10_000, seed=2026):
+  rng = np.random.default_rng(seed)
+  null = []
+  for _ in range(n_perm):
+    shuffled = rng.permutation(labels)
+    null.append(np.median(values[shuffled]) - np.median(values[~shuffled]))
+  return np.array(null)
+
+# Concatenação dos dados com o outlier e criação dos rótulos de grupo
+mpg_values = np.concatenate([manual.to_numpy(), automatic_typo.to_numpy()])
+mpg_labels = np.concatenate([
+  np.ones(len(manual), dtype=bool),
+  np.zeros(len(automatic_typo), dtype=bool)
+])
+
+# Diferença de medianas observada e cálculo do p-valor por permutação
+delta_median_obs = manual.median() - automatic_typo.median()
+null_median = permutation_null_median(mpg_values, mpg_labels)
+p_median = np.mean(np.abs(null_median) >= abs(delta_median_obs))
+
+print(f"Diferença de medianas: {delta_median_obs:.2f} mpg | p-valor (permutação de medianas): {p_median:.4f}")
+```
+
+Mesmo com a presença do outlier de 60 mpg, o teste de permutação de medianas manteve $p = 0,0228 < 0,05$, demonstrando a resiliência de abordagens não-paramétricas quando há contaminação nos dados.
