@@ -1,0 +1,656 @@
+```{python}
+# Importa as bibliotecas e define o tema dos gráficos
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy import stats
+from statsmodels.stats.proportion import proportions_ztest, proportion_confint
+
+sns.set_theme(style="whitegrid", palette="colorblind")
+
+```
+
+```{python}
+# Carrega as cinco bases
+mtcars = pd.read_csv("../aulas/mtcars/data/mtcars.csv")
+penguins = pd.read_csv("../aulas/penguins/data/penguins.csv")
+sleep = pd.read_csv("../aulas/sleep/data/sleep.csv")
+iris = pd.read_csv("../aulas/iris/data/iris.csv")
+titanic = pd.read_csv("../aulas/titanic/data/titanic.csv")
+
+
+```
+
+
+```{python}
+
+penguins.head()
+
+```
+
+- species: espécie do pinguim (Adelie, Chinstrap ou Gentoo).
+- island: ilha onde o animal foi observado (Biscoe, Dream ou Torgersen).
+- bill_len: comprimento do bico, em milímetros.
+- bill_dep: profundidade (altura) do bico, em milímetros.
+- flipper_len: comprimento da nadadeira, em milímetros.
+- body_mass: massa corporal, em gramas.
+- sex: sexo do animal (female ou male). Está ausente em 11 pinguins.
+- year: ano da observação (2007, 2008 ou 2009).
+
+```{python}
+titanic.head()
+```
+
+- survived: se o passageiro sobreviveu (1) ou não (0).
+- pclass: classe da passagem (1, 2 ou 3).
+- sex: sexo do passageiro (female ou male).
+- age: idade, em anos. Está ausente em 177 passageiros.
+- sibsp: número de irmãos e cônjuges a bordo.
+- parch: número de pais e filhos a bordo.
+- fare: valor pago pela passagem, em libras esterlinas.
+- embarked: porto de embarque, abreviado (C, Q ou S).
+- class: classe da passagem, por extenso (First, Second ou Third).
+- who: categoria do passageiro (man, woman ou child).
+- adult_male: se o passageiro é um homem adulto (True ou False).
+- deck: convés da cabine. Está ausente em 688 passageiros.
+- embark_town: porto de embarque, por extenso (Cherbourg, Queenstown ou Southampton).
+- alive: sobrevivência em texto (yes ou no), equivalente a survived.
+- alone: se o passageiro viajava sem familiares (True ou False).
+
+
+```{python}
+
+fig, axes = plt.subplots(1, 2, figsize=(10,4))
+
+for ax, values, title in zip(axes, 
+                            [mtcars.mpg, titanic.fare], 
+                            ["mtcars · mpg (n = 32)", "titanic · fare (n = 891)"]
+                            ):
+  
+  stats.probplot(values, dist="norm", plot=ax)
+  ax.set(
+    title=title, 
+    xlabel="Quantil teorico da normal", 
+    ylabel="Quantil da amostra"
+  )
+
+plt.tight_layout()
+plt.show()
+
+pd.DataFrame({
+    "mpg": stats.shapiro(mtcars.mpg),
+    "fare": stats.shapiro(titanic.fare)
+  }, 
+  index=["w", "p"]
+).T
+
+```
+
+### Conclusão prática 
+
+$W$ próximo de $1$ (ex.: 0.95 a 0.99): Indica que os seus dados ordenados formam uma linha quase reta quando comparados aos quantis normais teóricos. A distribuição é muito próxima de uma normal.
+
+$W$ baixo / longe de $1$ (ex.: 0.52): Indica que os dados fogem muito da linha reta teórica, há forte assimetria, caudas pesadas ou outliers quebrando o formato de sino.
+
+Se $p > 0,05$: Você não rejeita a hipótese de normalidade (assume que os dados são normais).
+
+Se $p \le 0,05$: Você rejeita a hipótese de normalidade (os dados não são normais).
+
+Como $0,1229 > 0,05$, segue uma distribuição normal.
+
+Como $p$ é infinitamente menor que $0,05$, não segue uma distribuição normal (provavelmente tem forte assimetria ou outliers).
+
+
+
+## 2.6 Três perguntas escolhem o teste
+
+A escolha do teste resulta de três perguntas, feitas nesta ordem:
+
+1. **Qual o objetivo?** Comparar médias, comparar proporções ou medir associação.
+2. **Qual a escala?** Da resposta e da variável explicativa: contínua, binária ou nominal.
+3. **Qual o desenho?** Uma amostra, dois grupos ou três ou mais; independentes ou pareados.
+
+Respondidas as três, o teste fica determinado, e resta verificar suas premissas. A matriz abaixo resume os sete casos desta aula:
+
+| Objetivo | Resposta | Explicativa e desenho | Teste | Caso |
+|---|---|---|---|---|
+| Média contra uma meta | Contínua | Nenhuma (valor $\mu_0$) | *t* de uma amostra | 1 · `mtcars` |
+| Médias de 2 grupos | Contínua | Binária, independentes | *t* de Welch | 2 · `penguins` |
+| Antes e depois | Contínua | 2 momentos, pareados | *t* pareado | 3 · `sleep` |
+| Médias de 3 ou mais grupos | Contínua | Nominal, independentes | ANOVA + Tukey | 4 · `iris` |
+| Associação linear | Contínua | Contínua | Pearson | 5 · `mtcars` |
+| Proporções de 2 grupos | Binária | Binária, independentes | *Z* de duas proporções | 6 · `titanic` |
+| Associação entre categorias | Nominal | Nominal, independentes | Qui-quadrado | 7 · `titanic` |
+
+Errar a escolha, por exemplo usando um teste para amostras independentes em dados pareados, ou vários testes *t* no lugar da ANOVA, altera as taxas de erro dos tipos I e II.
+
+
+## Casos de testes
+
+```{python}
+# Resume o resultado de um teste em uma linha legível
+def report(name, result, stat="estatística", df=None):
+  if isinstance(result, tuple):
+    value, p = result
+  else:
+    value, p = result.statistic, result.pvalue
+  df = df if df is not None else getattr(result, "df", None)
+
+  parts = [f"{stat} = {value:.3f}"]
+  if df is not None:
+    parts.append(f"gl = {df:.4g}" if np.isscalar(df) else f"gl = {df}")
+  parts.append("p < 0.001" if p < 0.001 else f"p = {p:.3f}")
+  if hasattr(result, "confidence_interval"):
+    ci = result.confidence_interval()
+    parts.append(f"IC 95% [{ci.low:.2f} ; {ci.high:.2f}]")
+
+  print(f"{name}: " + " · ".join(parts))
+
+
+```
+
+## Caso 1. Teste *t* de uma amostra
+
+::: {.callout-note icon=false}
+## Cenário
+
+A gestão de uma frota pergunta se o consumo médio (`mpg`) dos veículos atende à meta de projeto de 20 mpg. Você tem os dados de 32 carros: a média deles basta para responder?
+
+- $H_0$: o consumo médio é igual à meta ($\mu = 20$).
+- $H_1$: o consumo médio é diferente da meta ($\mu \neq 20$).
+:::
+
+**Premissas do teste**
+
+- Observações independentes entre si.
+- Variável resposta numérica contínua.
+- Distribuição normal na população ou amostra grande o bastante para que a média seja aproximadamente normal, pelo teorema central do limite.
+
+Calculamos a estatística passo a passo, seguindo as fórmulas da seção 2.1:
+
+```{python}
+# Teste T
+
+mpg = mtcars.mpg
+target = 20
+n = len(mpg)
+
+se = mpg.std() / np.sqrt(n)
+t = (mpg.mean() - target) / se
+p = 2 * stats.t.sf(abs(t), df=n - 1)
+
+# Equivalente nativo em uma linha (para conferir o resultado):
+case1 = stats.ttest_1samp(mpg, popmean=target)
+
+t_scipy, p_scipy = case1
+comp = pd.DataFrame({
+  "Manual" : [t, p],
+  "Lib" : [t_scipy, p_scipy]
+},
+  index= ["t", "p"]
+)
+
+print(comp)
+
+report("\n t de uma amostra", case1, stat="t")
+
+```
+
+"A estatística t (0,085) mostra que a diferença entre a média da amostra e a meta é muito baixa em relação ao erro padrão. Como o p-valor (0,933) é alto (p-value > $\alpha = 0,05$), não rejeitamos $H_0$. Concluímos que não há evidência estatística de que o consumo médio da frota seja diferente da meta de $20\text{ mpg}$.
+
+## Caso 2. Teste *t* de Welch
+
+::: {.callout-note icon=false}
+## Cenário
+
+Uma equipe de biólogos de campo quer saber se machos e fêmeas de pinguins têm massas corporais (`body_mass`, em gramas) médias diferentes, um sinal de dimorfismo sexual. Cada grupo é formado por animais distintos.
+
+- $H_0$: machos e fêmeas têm, em média, a mesma massa ($\mu_1 = \mu_2$).
+- $H_1$: as massas médias são diferentes ($\mu_1 \neq \mu_2$).
+:::
+
+**Premissas do teste**
+
+- Observações independentes, dentro de cada grupo e entre os grupos.
+- Variável resposta numérica contínua.
+- Distribuição normal em cada grupo ou amostras grandes o bastante para o teorema central do limite.
+- As variâncias dos grupos **não** precisam ser iguais. É isso que distingue a versão de Welch do teste *t* clássico.
+
+A base tem 344 pinguins, mas 11 não têm o sexo registrado. Ficamos com os 333 restantes:
+
+
+```{python}
+
+penguins_sex = penguins.dropna(subset=["sex", "body_mass"])
+
+males = penguins_sex.loc[penguins_sex.sex == "male", "body_mass"]
+females = penguins_sex.loc[penguins_sex.sex == "female", "body_mass"]
+
+```
+
+```{python}
+
+welch_table = (
+  penguins_sex
+  .groupby("sex")
+  .body_mass
+  .agg(n="size", media='mean', dp='std')
+  .assign(s2_n=lambda df: df.dp ** 2 / df.n)
+).round(2)
+
+# s2_n -> variância da média amostral
+
+welch_table
+
+```
+
+
+```{python}
+
+# Erro-padrão da diferença, estatística t e teste de Welch
+se_diff = np.sqrt(welch_table["s2_n"].sum())
+t_manual = (males.mean() - females.mean()) / se_diff
+
+case2 = stats.ttest_ind(males, females, equal_var=False)
+
+print(f"erro-padrão da diferença = {se_diff:.1f} g")
+print(f"t calculado à mão = {t_manual:.2f}")
+report("t de Welch", case2, stat="t")
+
+```
+
+```{python}
+
+fig, ax= plt.subplots(figsize=(6, 5))
+
+sns.stripplot(
+  data= penguins_sex,
+  x="sex",
+  y="body_mass",
+  order=["female", "male"],
+  ax=ax,
+)
+ax.set_ylabel("Massa corporal (g)")
+
+sns.pointplot(
+  data=penguins_sex,
+  x="sex",
+  y="body_mass",
+  ax=ax,
+  linestyle="none",   # Não liga as médias com uma linha diagonal
+  marker="_",         # Usa um traço horizontal como marcador
+  markersize=100,      # Largura do traço
+  markeredgewidth=3,  # Espessura do traço
+  color="#d0843d",
+  errorbar=None       # Oculta a barra vertical de intervalo de 
+)
+plt.show()
+
+```
+
+**Interpretação.** Os dois grupos se sobrepõem bastante: cerca de 25% das fêmeas pesam mais que o macho médio. Ainda assim, a média dos machos fica bem acima da média das fêmeas. Se machos e fêmeas tivessem a mesma massa média, uma diferença de 683 g seria praticamente impossível por acaso ($p < 0{,}001$). Rejeitamos $H_0$: há evidência de dimorfismo sexual, com machos mais pesados. Note que o teste fala de **médias**. Ele não afirma que todo macho é mais pesado que toda fêmea.
+
+
+
+```{python}
+  (
+    penguins_sex
+    .groupby(['species', 'sex'])
+    .body_mass
+    .agg(["size", "mean", "std"])
+    .round(0)
+  )
+
+
+```
+
+```{python}
+
+fig = plt.subplots(figsize=(6, 5))
+
+sns.boxplot(
+  data=penguins_sex,
+  x='species',
+  y='body_mass',
+  order=['Adelie', "Chinstrap", 'Gentoo'],
+  hue='sex',
+  hue_order=["female", "male"]
+)
+
+```
+
+
+Em todas as espécies, a caixa dos machos fica acima da caixa das fêmeas.
+
+
+```{python}
+
+for species, group in penguins_sex.groupby('species'):
+  male = group.loc[group.sex == "male", 'body_mass']
+  female = group.loc[group.sex == "female", 'body_mass']
+  report(species, stats.ttest_ind(male, female, equal_var=False), stat="t")
+
+
+```
+
+O dimorfismo aparece nas três espécies, com p-value < 0,001 em todas.
+
+## Caso 3. Teste *t* Pareado
+
+::: {.callout-note icon=false}
+## Cenário
+
+Em um ensaio clínico, os mesmos 10 pacientes testaram dois soníferos, um em cada período, e foram medidas as horas extras de sono (`extra`). O médico quer saber se a droga 2 rende mais horas de sono que a droga 1.
+
+- $H_0$: em média, a droga 2 não muda as horas de sono em relação à droga 1 ($\mu_D = 0$).
+- $H_1$: em média, as horas de sono mudam entre as drogas ($\mu_D \neq 0$).
+:::
+
+
+
+**Premissas do teste**
+
+- Cada par de medidas vem da mesma unidade, no caso o mesmo paciente.
+- Os pares são independentes entre si.
+- Variável resposta numérica contínua.
+- As diferenças dentro de cada par, $D_i = X_{2i} - X_{1i}$, seguem aproximadamente uma distribuição normal.
+
+A base `sleep` está no formato longo: uma linha por paciente e droga. Reorganizamos para uma linha por paciente e calculamos a diferença:
+
+```{python}
+sleep_wide = (
+  sleep
+  .pivot(index="ID", columns='group', values='extra')
+  .rename(columns={1: 'droga_1', 2: 'droga_2'})
+  .assign(D=lambda df: df.droga_2 - df.droga_1)
+)
+
+sleep_wide
+```
+
+```{python}
+
+resume_sleep = pd.DataFrame({
+  'Tipos: ' : sleep.dtypes,
+  'Nulos %: ' : sleep.isna().mean().mul(100),
+  'Duplicados: ' : sleep.duplicated().sum()
+})
+
+resume_sleep
+```
+### Premissas
+
+- Pares independentes entre si.
+- Variável resposta numérica contínua.
+- Diferenças $D_i = X_{2i} - X_{1i}$ seguem distribuição normal.
+
+---
+
+#### 1. Normalidade das diferenças ($D = \text{droga\_2} - \text{droga\_1}$)
+
+```{python}
+d_diff = sleep_wide["D"]
+
+w, p_s = stats.shapiro(d_diff)
+print(f"Shapiro-Wilk -> W: {w:.4f} | p-valor: {p_s:.4f}")
+```
+
+```{python}
+fig, ax = plt.subplots(figsize=(5, 5))
+
+stats.probplot(d_diff, dist="norm", plot=ax)
+plt.show()
+```
+
+Com $W = 0,8300$ e $p = 0,0333$ ($\le 0,05$), rejeitamos $H_0$ de normalidade. O QQ-plot confirma o desvio nas extremidades. Como $n = 10$ é pequeno, o Teste t pareado perde robustez e exige confirmação via Wilcoxon.
+
+---
+
+#### 2. Teste t Pareado vs. Não Pareado
+
+```{python}
+resume = d_diff.agg(media="mean", dp="std").round(2)
+print(resume, "\n")
+
+case3 = stats.ttest_rel(sleep_wide["droga_2"], sleep_wide["droga_1"])
+unpaired = stats.ttest_ind(sleep_wide["droga_2"], sleep_wide["droga_1"])
+
+pd.DataFrame(
+  {
+    "t": [case3.statistic, unpaired.statistic], 
+    "p": [case3.pvalue, unpaired.pvalue]
+  },
+  index=["Pareado", "Não pareado"],
+).round(4)
+```
+
+A diferença média foi de $1,58\text{ h}$ ($\text{DP} = 1,23\text{ h}$).
+
+- **Pareado ($t = 4,0621$; $p = 0,0028$):** Remove a variação individual entre pacientes, reduz o ruído e rejeita $H_0$ ($p \le 0,05$), indicando ganho real de sono com a Droga 2.
+- **Não pareado ($t = 1,8608$; $p = 0,0792$):** Mistura a variação entre indivíduos, infla o erro padrão e gera um falso negativo ($p > 0,05$).
+
+---
+
+#### 3. Confirmação Não Paramétrica (Wilcoxon)
+
+```{python}
+t_w, p_w = stats.wilcoxon(d_diff)
+print(f"Wilcoxon -> T: {t_w:.1f} | p-valor: {p_w:.4f}")
+```
+
+O teste de Wilcoxon retornou $T = 0,0$ (efeito unânime em uma direção) e $p = 0,0039$ ($\le 0,05$). Rejeitamos $H_0$ e confirmamos que a Droga 2 aumenta significativamente as horas extras de sono em relação à Droga 1.
+
+
+
+### Caso 4: ANOVA One-Way
+
+**Objetivo:** Comparar a média de **3 ou mais grupos** ao mesmo tempo mantendo o risco de falso positivo ($\alpha$) em 5% (rodar vários testes *t* seguidos acumula erro: $\alpha_{\text{conjunto}} = 1 - (1 - \alpha)^c$).
+
+- **$H_0$:** Todas as médias são iguais ($\mu_1 = \mu_2 = \mu_3$).
+- **$H_1$:** Pelo menos uma média difere das demais.
+
+#### Premissas
+- Observações independentes dentro e entre os grupos.
+- Variável numérica contínua e resíduos aproximadamente normais por grupo.
+- **Homocedasticidade:** Variâncias iguais entre os grupos.
+
+---
+
+#### 1. Checagem de Premissa (Levene) e ANOVA
+
+```{python}
+setosa, versicolor, virginica = [
+  group["sepal_length"] for _, group in iris.groupby("species")
+]
+
+print(f"Setosa -> : {setosa.mean():.2f}  versicolor -> : {versicolor.mean():.2f} virginica -> : {virginica.mean():.2f} ")
+
+# 1. Homocedasticidade
+stat_lev, p_lev = stats.levene(setosa, versicolor, virginica)
+print(f"Levene -> W: {stat_lev:.4f} | p-valor: {p_lev:.4f}")
+
+# 2. ANOVA One-Way
+f_stat, p_anova = stats.f_oneway(setosa, versicolor, virginica)
+print(f"ANOVA  -> F: {f_stat:.4f} | p-valor: {p_anova:.4f}")
+```
+
+- **Levene ($p = 0,0022 \le 0,05$):** Rejeita a igualdade de variâncias (heterocedasticidade). Em rigor, o ideal seria usar **ANOVA de Welch + Games-Howell**, mas como a diferença entre médias é enorme, seguimos com a análise padrão como referência.
+- **ANOVA ($F = 119,26$; $p < 0,001$):** Rejeitamos $H_0$. Existe diferença significativa entre as espécies, mas a ANOVA não diz **quais** pares diferem.
+
+---
+
+#### 2. Teste Post-Hoc (Tukey HSD)
+
+```{python}
+# Descobre quais pares diferem mantendo alpha = 5%
+print(stats.tukey_hsd(setosa, versicolor, virginica))
+```
+
+- **Resultado:** Todos os pares (`setosa` $\times$ `versicolor`, `setosa` $\times$ `virginica` e `versicolor` $\times$ `virginica`) apresentam $p < 0,001$.
+- **Conclusão:** As três espécies possuem comprimentos médios de sépala estatisticamente distintos entre si (5,01 cm, 5,94 cm e 6,59 cm).
+
+
+### Caso 5: Correlação de Pearson
+
+**Objetivo:** Medir a direção e a força da relação **linear** (em linha reta) entre duas variáveis numéricas contínuas, na escala de **$-1$ a $+1$**.
+
+- **$H_0$:** Não existe relação linear entre as variáveis ($\rho = 0$).
+- **$H_1$:** Existe relação linear entre as variáveis ($\rho \neq 0$).
+- **Régua de força ($\vert{}r\vert{}$):** $< 0,3$ (fraca) | $0,3 \text{ a } 0,5$ (moderada) | $> 0,5$ (forte).
+
+#### Premissas
+- Pares de observações independentes e variáveis numéricas contínuas.
+- **Linearidade:** A relação deve seguir uma linha reta (não uma curva em "U").
+- Normalidade bivariada e ausência de *outliers* influentes (invariante à unidade de medida e simétrico).
+
+---
+
+#### 1. Teste de Pearson e Inspeção Visual (`wt` vs. `mpg`)
+
+```{python}
+r, p_val = stats.pearsonr(mtcars["wt"], mtcars["mpg"])
+print(f"Pearson -> r: {r:.4f} | p-valor: {p_val:.4e}")
+```
+
+```{python}
+fig, ax = plt.subplots(figsize=(6, 4))
+
+sns.regplot(
+  data=mtcars, 
+  x="wt", 
+  y="mpg", 
+  ci=None, 
+  line_kws={"color": "orange"}, 
+  ax=ax
+
+)
+ax.set(
+  title=f"r = {r:.2f}", 
+  xlabel="Peso (1.000 lb)", 
+  ylabel="Consumo (mpg)"
+)
+
+plt.tight_layout()
+plt.show()
+```
+
+- **Resultado ($r = -0,8677$; $p < 0,001$):** Correlação **forte e negativa** (quanto maior o peso, menor o rendimento em `mpg`). Rejeitamos $H_0$.
+- **Atenção:** Correlação não implica causalidade, e Pearson ignora relações curvas (para curvas monotônicas, usar **Spearman**).
+
+---
+
+#### 2. Linearização com Log (`hp` vs. `mpg`)
+
+```{python}
+log_hp = np.log(mtcars["hp"])
+
+r_orig, p_orig = stats.pearsonr(mtcars["hp"], mtcars["mpg"])
+r_log, p_log = stats.pearsonr(log_hp, mtcars["mpg"])
+
+print(f"Escala original (hp) -> r: {r_orig:.4f} | p: {p_orig:.4e}")
+print(f"Escala log (log_hp)  -> r: {r_log:.4f} | p: {p_log:.4e}")
+```
+
+- **Por que transformar?** Na escala original (`hp`), a queda de `mpg` forma uma curva, subestimando a força da relação ($r = -0,7762$).
+- **Efeito do `log`:** Comprime valores altos e estica os baixos, tornando a relação mais reta e elevando a correlação para **$r = -0,8505$** ($p < 0,001$).
+
+
+
+### Caso 6: Teste Z de Duas Proporções
+
+**Objetivo:** Comparar a taxa de ocorrência (proporção) de uma variável **binária** (`0` ou `1`) entre dois grupos independentes.
+
+- **$H_0$:** As proporções dos dois grupos são iguais ($p_1 = p_2$).
+- **$H_1$:** As proporções dos dois grupos são diferentes ($p_1 \neq p_2$).
+
+#### Premissas
+- Variável resposta binária (sucesso/fracasso) e observações independentes.
+- **Aproximação normal:** Pelo menos **5 sucessos** ($n\hat{p} \ge 5$) e **5 fracassos** ($n(1-\hat{p}) \ge 5$) em cada grupo *(se falhar, usar Teste Exato de Fisher)*.
+
+---
+
+#### 1. Tabela de Contagens e Checagem das Premissas
+
+```{python}
+by_sex = (
+  titanic
+  .groupby("sex")
+  .survived
+  .agg(sobreviventes="sum", n="size")
+  .assign(
+    nao_sobreviventes=lambda df: df["n"] - df["sobreviventes"],
+    proporcao=lambda df: df["sobreviventes"] / df["n"],
+  )
+)
+
+by_sex.round(3)
+```
+
+- **Checagem:** A menor contagem nas células (`nao_sobreviventes` entre mulheres = $81$) é muito maior que $5$, validando o uso do teste $Z$.
+- **Taxas observadas:** Mulheres = **74,2%** ($233/314$) | Homens = **18,9%** ($109/577$).
+
+---
+
+#### 2. Teste Z (`proportions_ztest`) e Intervalo de Confiança
+
+```{python}
+
+z_stat, p_val = proportions_ztest(by_sex["sobreviventes"], by_sex["n"])
+low, high = proportion_confint(by_sex["sobreviventes"], by_sex["n"])
+
+print(f"Teste Z -> Z: {z_stat:.4f} | p-valor: {p_val:.4e}")
+print("IC 95% (female, male):", list(zip(low.round(3), high.round(3))))
+```
+
+- **Resultado ($\vert{}Z\vert{} = 16,22$; $p < 0,001$):** A diferença de ~55 pontos percentuais entre os grupos equivale a mais de 16 erros-padrão, e os intervalos de confiança (`[0,694 ; 0,790]` vs. `[0,157 ; 0,221]`) nem se aproximam.
+- **Conclusão:** Rejeitamos $H_0$ ($p \le 0,05$). A taxa de sobrevivência das mulheres foi estatisticamente muito superior à dos homens.
+
+
+### Caso 7: Qui-Quadrado de Independência ($\chi^2$)
+
+**Objetivo:** Verificar se duas **variáveis categóricas** são independentes ou se existe associação entre elas (generaliza o Teste Z para tabelas maiores que $2 \times 2$, onde $Z^2 = \chi^2$).
+
+- **$H_0$:** As variáveis são independentes (sobrevivência não depende da classe).
+- **$H_1$:** As variáveis estão associadas (sobrevivência depende da classe).
+
+#### Premissas
+- Duas variáveis categóricas e observações independentes (cada indivíduo em apenas uma célula).
+- **Frequências esperadas ($E$):** Pelo menos $80\%$ das células com $E \ge 5$ e nenhuma célula com $E < 1$ *(se falhar, usar Teste Exato de Fisher)*.
+
+---
+
+#### 1. Tabela de Contingência e Teste Qui-Quadrado
+
+```{python}
+# 1. Tabela observada (O)
+observed = pd.crosstab(titanic["pclass"], titanic["survived"])
+
+# 2. Teste Qui-Quadrado e frequências esperadas (E)
+chi2, p_val, gl, expected_arr = stats.chi2_contingency(observed)
+
+expected = pd.DataFrame(
+  expected_arr, 
+  index=observed.index, 
+  columns=observed.columns
+)
+
+contributions = (observed - expected) ** 2 / expected
+
+print(f"Qui-quadrado -> χ²: {chi2:.2f} | gl: {gl} | p-valor: {p_val:.4e}\n")
+pd.concat({
+  "Observado (O)": observed, 
+  "Esperado (E)": expected, 
+  "(O-E)²/E": contributions}, 
+  axis=1
+).round(1)
+```
+
+- **Checagem:** A menor frequência esperada é $70,6$ ($\ge 5$), atendendo à premissa com folga.
+- **Onde está o desvio:** As maiores parcelas de `(O-E)²/E` vêm da **1ª classe** (sobreviveu muito mais que o esperado: $136$ vs. $83$) e da **3ª classe** (sobreviveu muito menos: $119$ vs. $188$).
+- **Conclusão ($\chi^2 = 102,89$; $\text{gl} = 2$; $p < 0,001$):** Rejeitamos $H_0$. A sobrevivência esteve associada à classe de embarque (com V de Cramér $\approx 0,34$, indicando associação moderada).
+
+
+```{python}
+
+```

@@ -12,7 +12,7 @@ Repositório dedicado ao conteúdo, roteiros e atividades práticas da **Unidade
 │   ├── Aulas.qmd
 │   └── [datasets]/                 # Conjuntos de dados das aulas (penguins, iris, titanic, etc.)
 │
-├── unidade_2/                        # Espaço reservado para exercícios da unidade 2
+├── unidade_02/                        # Espaço reservado para exercícios da unidade 2
 │
 └── README.md                       # Documentação e guia da unidade
 ```
@@ -23,8 +23,8 @@ Repositório dedicado ao conteúdo, roteiros e atividades práticas da **Unidade
 
 | Feito | Aula | Título |
 | :---: | :--- | :--- |
-| [x] | **06** | **Imputação e Normalização de Dados** |
-| [x] | **07** | **Estatística Inferencial** |
+| [OK] | **06** | **Imputação e Normalização de Dados** |
+| [OK] | **07** | **Estatística Inferencial** |
 | [] | **08** | **Testes Paramétricos** | 
 
 ---
