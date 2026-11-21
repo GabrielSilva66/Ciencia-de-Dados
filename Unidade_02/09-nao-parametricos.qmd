@@ -1,7 +1,5 @@
 # Aula 9 - Testes Não Paramétricos
 
-
-
 ```{python}
 # Importa as bibliotecas e define o tema dos gráficos
 import numpy as np
@@ -15,20 +13,19 @@ sns.set_theme(style="whitegrid", palette="colorblind")
 
 ```
 
+### Teste de Mann-Whitney (Alternativa Não Paramétrica)
 
+**Objetivo:** Comparar dois grupos independentes quando a variável numérica possui **assimetria forte** ou **outliers extremos** que distorcem a média e violam a normalidade em amostras pequenas.
 
-```{python}
-# Resume o resultado de um teste em uma linha legível
-def report(name, result, stat="estatística"):
-    parts = [f"{stat} = {result.statistic:.3f}"]
-    if hasattr(result, "df"):
-        parts.append(f"gl = {result.df:.4g}")
-    p = result.pvalue
-    parts.append("p < 0.001" if p < 0.001 else f"p = {p:.3f}")
-    print(f"{name}: " + " · ".join(parts))
+::: {.callout-note icon=false}
+## Hipóteses
+- **$H_0$:** As distribuições dos tempos de internação são iguais nos dois tratamentos.
+- **$H_1$:** Um tratamento tende a apresentar tempos de internação diferentes do outro.
+:::
 
-```
+---
 
+#### 1. Dados e Inspeção Visual
 
 ```{python}
 # Tempos de internação dos dois tratamentos, em dias
@@ -36,77 +33,215 @@ days_a = [1, 2, 2, 3, 3, 4, 5, 120]
 days_b = [4, 5, 5, 6, 6, 7, 8, 9]
 
 uti = pd.DataFrame(
-    {
-        "tratamento": ["A"] * len(days_a) + ["B"] * len(days_b),
-        "dias": days_a + days_b,
-    }
+  {
+    "tratamento": ["A"] * len(days_a) + ["B"] * len(days_b),
+    "dias": days_a + days_b,
+  }
+)
+```
+
+```{python}
+fig, axes = plt.subplots(1, 2, figsize=(9, 3.5))
+
+for ax, xlim, titulo in zip(axes, [(0, 10), (-3, 125)],
+  ["Zoom (0 a 10 dias)", "Escala completa (com outlier)"]):
+  sns.swarmplot(
+    data=uti, 
+    x="dias", 
+    y="tratamento", 
+    hue="tratamento", 
+    ax=ax, 
+    legend=False
+  )
+
+  ax.set(
+    xlim=xlim, 
+    title=titulo, 
+    xlabel="Dias de internação", 
+    ylabel="Tratamento"
+  )
+
+plt.tight_layout()
+plt.show()
+```
+
+---
+
+#### 2. Assimetria e Medidas Resumo
+
+```{python}
+for group in ["A", "B"]:
+  tratamento = uti.loc[uti.tratamento == group, "dias"]
+  print(f"Assimetria (Skew) Tratamento {group}: {stats.skew(tratamento):.2f}")
+
+uti_resume = (
+  uti
+  .groupby("tratamento")
+  .dias
+  .agg(media="mean", mediana="median", dp="std", min="min", max="max")
+  .round(2)
+)
+uti_resume
+```
+
+- **Diagnóstico:** O Tratamento A apresenta forte assimetria positiva ($\text{skew} = 2,27$) causada pelo *outlier* de $120\text{ dias}$. Isso puxa a **média** do grupo A para cima, enquanto a **mediana** mostra o cenário oposto.
+
+- **Escolha do teste:** Como temos **2 grupos independentes**, **amostra pequena ($n = 8$)** e **forte assimetria/outlier**, a média não representa o grupo A e o Teste t perde validade. Aplicamos o **Teste U de Mann-Whitney** (baseado em postos).
+
+---
+
+#### 3. Teste U de Mann-Whitney
+
+```{python}
+group_a = uti.loc[uti.tratamento == "A", "dias"]
+group_b = uti.loc[uti.tratamento == "B", "dias"]
+
+u, p_value = stats.mannwhitneyu(group_a, group_b)
+print(f"Mann-Whitney -> U: {u:.1f} | p-valor: {p_value:.4f}")
+```
+
+- **Conclusão ($U = 10,5$; $p = 0,0311 \le 0,05$):** Rejeitamos $H_0$. Como o teste de postos ignora a magnitude extrema do *outlier* de $120\text{ dias}$, ele captura o comportamento da maioria dos pacientes e confirma que o **Tratamento A tende a ter um tempo de internação significativamente menor** que o Tratamento B (mediana de $3,0$ vs. $6,0\text{ dias}$).
+
+### Caso 2: Mann-Whitney em um Teste A/B
+
+**Objetivo:** Comparar o tempo até o primeiro clique entre dois layouts independentes quando há presença de *outlier* e assimetria forte que invalidam a média.
+
+::: {.callout-note icon=false}
+## Hipóteses
+- **$H_0$:** Nenhum layout domina o outro ($P(A > B) = P(B > A)$).
+- **$H_1$:** Um layout tende a gerar tempos menores que o outro.
+:::
+
+#### Premissas
+- Observações independentes (cada visitante vê apenas um layout).
+- Variável resposta numérica/ordinal ($n = 8$ por grupo).
+- Distribuições com assimetria/outliers que inviabilizam o Teste t.
+
+---
+
+#### 1. Dados e Inspeção Visual
+
+```{python}
+layout_a = [2.1, 2.8, 3.0, 3.4, 3.7, 4.2, 4.6, 14.0]
+layout_b = [3.9, 4.8, 5.0, 5.8, 6.1, 6.9, 7.7, 9.5]
+
+clicks = pd.DataFrame({
+    "layout": ["A"] * len(layout_a) + ["B"] * len(layout_b),
+    "segundos": layout_a + layout_b,
+})
+```
+
+```{python}
+fig, ax = plt.subplots(figsize=(5, 4.5))
+
+sns.boxplot(data=clicks, x="layout", y="segundos", showfliers=False, ax=ax)
+sns.stripplot(data=clicks, x="layout", y="segundos", color="steelblue", size=7, ax=ax)
+
+ax.set(title="Tempo até o 1º clique por layout", xlabel="Layout", ylabel="Segundos")
+plt.tight_layout()
+plt.show()
+```
+
+---
+
+#### 2. Resumo Numérico e Assimetria
+
+```{python}
+clicks_summary = (
+  clicks
+  .groupby("layout")
+  .segundos
+  .agg(media="mean", mediana="median", dp="std", max="max")
+  .round(2)
+)
+print(clicks_summary, "\n")
+
+clicks_a = clicks.loc[clicks.layout == "A", "segundos"]
+clicks_b = clicks.loc[clicks.layout == "B", "segundos"]
+
+print(f"Assimetria (Skew) A: {stats.skew(clicks_a):.2f}")
+print(f"Assimetria (Skew) B: {stats.skew(clicks_b):.2f}")
+```
+
+- **Diagnóstico:** A tabela e o boxplot já evidenciam o impacto do *outlier* de `14,0 s` no Layout A: a **média sobe para `4,72 s`**, descolando da **mediana (`3,55 s`)**, com desvio padrão elevado (`3,82 s`) e forte assimetria positiva ($\text{skew} = 2,17$). Como a média não representa bem o grupo A, optamos pelo teste não paramétrico de **Mann-Whitney**.
+
+---
+
+#### 3. Teste U de Mann-Whitney
+
+```{python}
+u, p_value = stats.mannwhitneyu(clicks_a, clicks_b)
+print(f"Mann-Whitney -> U: {u:.1f} | p-valor: {p_value:.4f}")
+```
+
+- **Conclusão ($U = 11,0$; $p = 0,0281 \le 0,05$):** Rejeitamos $H_0$. Como o teste baseado em postos não é distorcido pelo *outlier* isolado de `14,0 s`, ele confirma que o **Layout A gera tempos até o primeiro clique significativamente menores** que o Layout B (mediana de `3,55 s` contra `5,95 s`).
+
+### Caso 3: Correlação de Pearson vs. Spearman
+
+**Objetivo:** Comparar a correlação linear (**Pearson**) com a correlação monotônica baseada em postos (**Spearman**) quando a relação entre duas variáveis segue uma curva constante, e não uma linha reta.
+
+::: {.callout-note icon=false}
+## Hipóteses
+- **$H_0$:** Não há associação monotônica entre potência (`hp`) e consumo (`mpg`) ($\rho = 0$).
+- **$H_1$:** Existe associação monotônica entre potência e consumo ($\rho \neq 0$).
+:::
+
+#### Premissas (Spearman)
+- Pares de observações independentes entre si.
+- Variáveis numéricas ou pelo menos ordinais (para permitir ordenação em postos).
+- **Relação monotônica:** Quando uma variável cresce, a outra sempre cresce ou sempre decresce (em linha reta ou em curva).
+
+---
+```{python}
+mtcars = pd.read_csv("../aulas/mtcars/data/mtcars.csv")
+```
+
+
+#### 1. Cálculo de Pearson ($r$) e Spearman ($\rho$)
+
+```{python}
+r, p_value_p = stats.pearsonr(mtcars["hp"], mtcars["mpg"])
+rho, p_value_sp = stats.spearmanr(mtcars["hp"], mtcars["mpg"])
+
+print(f"Pearson  -> r:   {r:.4f} | p-valor: {p_value_p:.4e}")
+print(f"Spearman -> rho: {rho:.4f} | p-valor: {p_value_sp:.4e}")
+```
+
+---
+
+#### 2. Inspeção Visual: Escala Original vs. Postos
+
+```{python}
+fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
+
+sns.regplot(
+  x=mtcars["hp"], 
+  y=mtcars["mpg"], 
+  ax=axes[0]
+)
+axes[0].set(
+  title=f"Escala Original (Pearson r = {r:.2f})", 
+  xlabel="Potência (hp)", 
+  ylabel="Consumo (mpg)"
 )
 
-uti
+sns.regplot(
+  x=mtcars["hp"].rank(), 
+  y=mtcars["mpg"].rank(), 
+  ax=axes[1]
+)
+axes[1].set(
+  title=f"Postos / Ranks (Spearman ρ = {rho:.2f})", 
+  xlabel="Posto de hp", 
+  ylabel="Posto de mpg"
+)
 
-
+plt.tight_layout()
+plt.show()
 ```
 
-
-```{python}
-
-```
-
-
-```{python}
-
-```
-
-
-```{python}
-
-```
-
-
-```{python}
-
-```
-
-
-```{python}
-
-```
-
-
-```{python}
-
-```
-
-
-```{python}
-
-```
-
-
-```{python}
-
-```
-
-
-```{python}
-
-```
-
-
-```{python}
-
-```
-
-
-```{python}
-
-```
-
-
-```{python}
-
-```
-
+- **Diagnóstico:** Na escala original (esquerda), a queda de `mpg` conforme `hp` aumenta forma uma **curva**, o que reduz a aderência à reta e limita o coeficiente de Pearson ($r = -0,7762$). Ao converter os dados em **postos** (direita), os pontos se alinham muito melhor, elevando o coeficiente de Spearman para $\rho = -0,8947$.
+- **Conclusão ($\rho = -0,8947$; $p < 0,001$):** Rejeitamos $H_0$. Existe uma **forte correlação monotônica negativa** entre potência e consumo: carros mais potentes tendem consistentemente a fazer menos milhas por galão.
 
 ```{python}
 
